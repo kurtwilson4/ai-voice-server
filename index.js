@@ -11,11 +11,25 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// Store conversation history per call
+const sessions = {};
+
 app.post('/voice', async (req, res) => {
   const twiml = new VoiceResponse();
+  const callSid = req.body.CallSid;
+  const userSpeech = req.body.SpeechResult;
 
-  if (!req.body.SpeechResult) {
-    // Initial greeting with gather
+  // Create new session if it doesn't exist
+  if (!sessions[callSid]) {
+    sessions[callSid] = [
+      {
+        role: 'system',
+        content: 'You are a friendly AI phone receptionist for a container home Airbnb in Livingston, Texas. Gather booking details like dates, number of guests, and confirm before ending the call.',
+      },
+    ];
+  }
+
+  if (!userSpeech) {
     const gather = twiml.gather({
       input: 'speech',
       action: '/voice',
@@ -23,34 +37,24 @@ app.post('/voice', async (req, res) => {
     });
     gather.say('Hello, this is your AI phone assistant. How can I help you today?', { voice: 'alice' });
   } else {
-    // Get user input
-    const userInput = req.body.SpeechResult;
+    // Add user's message to session
+    sessions[callSid].push({ role: 'user', content: userSpeech });
 
-    try {
-      // Get AI response
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
-        messages: [
-          { role: 'system', content: 'You are a helpful AI phone receptionist for a container home Airbnb in Livingston, Texas. Ask questions one at a time to help with bookings.' },
-          { role: 'user', content: userInput },
-        ],
-      });
+    // Get AI response
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-3.5-turbo',
+      messages: sessions[callSid],
+    });
 
-      const aiReply = completion.choices[0].message.content;
+    const aiReply = completion.choices[0].message.content;
+    sessions[callSid].push({ role: 'assistant', content: aiReply });
 
-      // AI response and then pause for more input
-      twiml.say(aiReply, { voice: 'alice' });
-
-      const gather = twiml.gather({
-        input: 'speech',
-        action: '/voice',
-        method: 'POST',
-      });
-      gather.say('Is there anything else I can help you with?', { voice: 'alice' });
-    } catch (err) {
-      console.error(err);
-      twiml.say('Sorry, something went wrong.', { voice: 'alice' });
-    }
+    const gather = twiml.gather({
+      input: 'speech',
+      action: '/voice',
+      method: 'POST',
+    });
+    gather.say(aiReply + ' Is there anything else I can help you with?', { voice: 'alice' });
   }
 
   res.type('text/xml');
