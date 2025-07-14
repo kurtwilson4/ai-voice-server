@@ -16,7 +16,7 @@ app.get("/", (req, res) => {
   res.send("AI Voice Server is running");
 });
 
-// Example placeholder for booking (you can customize this later)
+// Placeholder route
 app.post("/book", async (req, res) => {
   res.send("Booking logic will go here");
 });
