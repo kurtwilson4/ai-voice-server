@@ -12,11 +12,13 @@ app.get('/voice', (req, res) => {
 
 // Handle POST for Twilio
 app.post('/voice', (req, res) => {
+  console.log('🔔 Incoming POST from Twilio');
   const twiml = new VoiceResponse();
   twiml.say('Hello, this is your AI phone assistant. How can I help you today?', { voice: 'alice' });
   res.type('text/xml');
   res.send(twiml.toString());
 });
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
