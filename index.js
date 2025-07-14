@@ -32,8 +32,12 @@ app.post('/voice', async (req, res) => {
     });
 
     const aiReply = completion.choices[0].message.content;
-    twiml.say(aiReply, { voice: 'alice' });
-  }
+    const gather = twiml.gather({
+  input: 'speech',
+  action: '/voice',
+  method: 'POST',
+});
+gather.say(aiReply + ' Is there anything else I can help you with?', { voice: 'alice' });
 
   res.type('text/xml');
   res.send(twiml.toString());
