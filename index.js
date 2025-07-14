@@ -70,9 +70,13 @@ app.post('/voice', async (req, res) => {
         end: { date: parseDate(dates[1] || dates[0]), timeZone: 'America/Chicago' },
       };
       try {
-        await calendar.events.insert({ calendarId: process.env.GOOGLE_CALENDAR_ID, resource: event });
+        const response = await calendar.events.insert({
+          calendarId: process.env.GOOGLE_CALENDAR_ID,
+          resource: event,
+        });
+        console.log('✅ Event created:', response.data);
       } catch (err) {
-        console.error('Calendar booking error:', err.message);
+        console.error('❌ Calendar booking error:', err.response?.data || err.message);
       }
     }
 
