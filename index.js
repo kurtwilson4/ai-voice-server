@@ -24,7 +24,8 @@ app.post('/voice', async (req, res) => {
     sessions[callSid] = [
       {
         role: 'system',
-        content: 'You are a friendly AI phone receptionist for a container home Airbnb in Livingston, Texas. Gather booking details like dates, number of guests, and confirm before ending the call.',
+        content:
+          'You are a friendly AI phone receptionist for a container home Airbnb in Livingston, Texas. Gather booking details like dates, number of guests, and confirm before ending the call.',
       },
     ];
   }
@@ -54,7 +55,7 @@ app.post('/voice', async (req, res) => {
       action: '/voice',
       method: 'POST',
     });
-    gather.say(aiReply + ' Is there anything else I can help you with?', { voice: 'alice' });
+    gather.say(aiReply, { voice: 'alice' });
   }
 
   res.type('text/xml');
