@@ -11,8 +11,14 @@ app.use(express.urlencoded({ extended: false }));
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Google Calendar auth setup
+const googleServiceAccount = process.env.GOOGLE_SERVICE_ACCOUNT;
+
+if (!googleServiceAccount) {
+  throw new Error("GOOGLE_SERVICE_ACCOUNT is not set in environment variables.");
+}
+
 const auth = new google.auth.GoogleAuth({
-  credentials: JSON.parse(Buffer.from(process.env.GOOGLE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf-8')),
+  credentials: JSON.parse(Buffer.from(googleServiceAccount, 'base64').toString('utf-8')),
   scopes: ['https://www.googleapis.com/auth/calendar'],
 });
 const calendar = google.calendar({ version: 'v3', auth });
@@ -64,7 +70,7 @@ app.post('/voice', async (req, res) => {
         end: { date: parseDate(dates[1] || dates[0]), timeZone: 'America/Chicago' },
       };
       try {
-        await calendar.events.insert({ calendarId: process.env.CALENDAR_ID, resource: event });
+        await calendar.events.insert({ calendarId: process.env.GOOGLE_CALENDAR_ID, resource: event });
       } catch (err) {
         console.error('Calendar booking error:', err.message);
       }
