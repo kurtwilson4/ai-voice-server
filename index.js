@@ -1,40 +1,40 @@
 const express = require('express');
 const twilio = require('twilio');
-const axios = require('axios');
-const { Configuration, OpenAIApi } = require('openai');
+const { OpenAI } = require('openai');
 require('dotenv').config();
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
 const app = express();
 app.use(express.urlencoded({ extended: false }));
 
-// Initialize OpenAI
-const configuration = new Configuration({
+const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
-const openai = new OpenAIApi(configuration);
 
-// Handle Twilio Voice webhook
 app.post('/voice', async (req, res) => {
   const twiml = new VoiceResponse();
-  const userSpeech = req.body.SpeechResult || '';
 
-  let aiReply = 'I’m sorry, I didn’t catch that. Can you say it again?';
+  if (!req.body.SpeechResult) {
+    const gather = twiml.gather({
+      input: 'speech',
+      action: '/voice',
+      method: 'POST',
+    });
+    gather.say('Hello, this is your AI phone assistant. How can I help you today?', { voice: 'alice' });
+  } else {
+    const userInput = req.body.SpeechResult;
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-3.5-turbo',
+      messages: [
+        { role: 'system', content: 'You are a friendly AI phone receptionist for a container home Airbnb in Livingston, Texas.' },
+        { role: 'user', content: userInput },
+      ],
+    });
 
-  if (userSpeech) {
-    try {
-      const completion = await openai.createChatCompletion({
-        model: 'gpt-3.5-turbo',
-        messages: [{ role: 'user', content: userSpeech }],
-      });
-
-      aiReply = completion.data.choices[0].message.content.trim();
-    } catch (error) {
-      console.error('OpenAI error:', error);
-    }
+    const aiReply = completion.choices[0].message.content;
+    twiml.say(aiReply, { voice: 'alice' });
   }
 
-  twiml.say({ voice: 'alice' }, aiReply);
   res.type('text/xml');
   res.send(twiml.toString());
 });
