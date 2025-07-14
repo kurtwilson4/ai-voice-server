@@ -21,17 +21,28 @@ app.post('/voice', async (req, res) => {
       method: 'POST',
     });
     gather.say('Hello, this is your AI phone assistant. How can I help you today?', { voice: 'alice' });
-  } else {
+
+    res.type('text/xml');
+    res.send(twiml.toString());
+    return;
+  }
+
+  try {
     const userInput = req.body.SpeechResult;
+
     const completion = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [
-        { role: 'system', content: 'You are a friendly AI phone receptionist for a container home Airbnb in Livingston, Texas.' },
+        {
+          role: 'system',
+          content: 'You are a friendly AI phone receptionist for a container home Airbnb in Livingston, Texas.',
+        },
         { role: 'user', content: userInput },
       ],
     });
 
     const aiReply = completion.choices[0].message.content;
+
     const gather = twiml.gather({
       input: 'speech',
       action: '/voice',
@@ -41,7 +52,13 @@ app.post('/voice', async (req, res) => {
 
     res.type('text/xml');
     res.send(twiml.toString());
-  }); // <-- This closing brace was missing
+  } catch (error) {
+    console.error('Error generating AI response:', error);
+    twiml.say("Sorry, I'm having trouble responding right now. Please try again later.", { voice: 'alice' });
+    res.type('text/xml');
+    res.send(twiml.toString());
+  }
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
