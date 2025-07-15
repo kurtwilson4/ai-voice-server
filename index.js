@@ -92,9 +92,11 @@ app.post('/voice', async (req, res) => {
 });
 
 function parseDate(str) {
-  const [month, day] = str.split(' ');
+  const cleanStr = str.replace(/(\d+)(st|nd|rd|th)/i, '$1'); // Remove suffix
+  const [month, day] = cleanStr.split(' ');
   const year = new Date().getFullYear();
-  return `${year}-${('0' + (new Date(`${month} 1`).getMonth() + 1)).slice(-2)}-${('0' + day).slice(-2)}`;
+  const monthIndex = new Date(`${month} 1`).getMonth() + 1;
+  return `${year}-${String(monthIndex).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
 const PORT = process.env.PORT || 3000;
