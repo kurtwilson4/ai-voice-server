@@ -9,17 +9,10 @@ const app = express();
 app.use(express.urlencoded({ extended: false }));
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
-// Google Calendar auth setup
-const googleServiceAccount = process.env.GOOGLE_SERVICE_ACCOUNT_BASE64;
-
-if (!googleServiceAccount) {
-  throw new Error("GOOGLE_SERVICE_ACCOUNT is not set in environment variables.");
-}
-
+// Google Calendar setup
 const auth = new google.auth.GoogleAuth({
-  credentials: JSON.parse(Buffer.from(googleServiceAccount, 'base64').toString('utf-8')),
+  credentials: JSON.parse(Buffer.from(process.env.GOOGLE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf-8')),
   scopes: ['https://www.googleapis.com/auth/calendar'],
 });
 const calendar = google.calendar({ version: 'v3', auth });
@@ -29,81 +22,86 @@ const sessions = {};
 app.post('/voice', async (req, res) => {
   const twiml = new VoiceResponse();
   const callSid = req.body.CallSid;
-  const userSpeech = req.body.SpeechResult;
+  const userSpeech = req.body.SpeechResult || '';
   const callerNumber = req.body.From;
 
   if (!sessions[callSid]) {
-    sessions[callSid] = [
-      {
-        role: 'system',
-        content:
-          'You are a helpful AI assistant that helps users book Airbnb container homes in Livingston, Texas. Ask for check-in/out dates, number of guests, and the name for the reservation. Once all are received, confirm the booking. Do not ask if anything else is needed unless unclear.',
-      },
-    ];
+    sessions[callSid] = {
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a helpful AI assistant that books Airbnb container homes in Livingston, Texas. Ask for check-in and check-out dates, number of guests, and name for the booking. Once all details are collected, confirm the reservation clearly.',
+        },
+      ],
+      fullTranscript: '',
+    };
   }
 
-  if (!userSpeech) {
-    const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
-    gather.say('Hello, this is your AI phone assistant. How can I help you today?', { voice: 'alice' });
-  } else {
-    sessions[callSid].push({ role: 'user', content: userSpeech });
+  // Save conversation
+  sessions[callSid].messages.push({ role: 'user', content: userSpeech });
+  sessions[callSid].fullTranscript += ' ' + userSpeech;
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: sessions[callSid],
-    });
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-3.5-turbo',
+    messages: sessions[callSid].messages,
+  });
 
-    const aiReply = completion.choices[0].message.content;
-    sessions[callSid].push({ role: 'assistant', content: aiReply });
+  const aiReply = completion.choices[0].message.content;
+  sessions[callSid].messages.push({ role: 'assistant', content: aiReply });
 
-    // Extract booking details
-    const dateRegex = /(\b(?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2}(?:st|nd|rd|th)?)\b/gi;
-    const guestRegex = /\b(\d+)\s+guests?\b/i;
-    const nameRegex = /\b(?:guest name is|name is|for|under the name of|under the name)\s+([A-Z][a-z]+\s[A-Z][a-z]+)\b/;
+  // Match from full transcript
+  const transcript = sessions[callSid].fullTranscript;
+  const dateRegex = /(?:january|february|march|april|may|june|july|august|september|october|november|december)\s\d{1,2}(?:st|nd|rd|th)?/gi;
+  const guestRegex = /(\d+)\s+guests?/i;
+  const nameRegex = /\b(?:my name is|this is|name is|for|under the name of)\s+([A-Z][a-z]+\s[A-Z][a-z]+)\b/i;
 
-    const dates = aiReply.match(dateRegex);
-    const guestsMatch = userSpeech.match(guestRegex);
-    const nameMatch = aiReply.match(nameRegex);
+  const dates = transcript.match(dateRegex);
+  const guestsMatch = transcript.match(guestRegex);
+  const nameMatch = transcript.match(nameRegex);
 
-    const guests = guestsMatch ? guestsMatch[1] : null;
-    const name = nameMatch ? nameMatch[1] : null;
+  const guests = guestsMatch ? guestsMatch[1] : null;
+  const name = nameMatch ? nameMatch[1] : null;
 
-    console.log('🧠 AI reply:', aiReply);
-    console.log('📅 Dates:', dates);
-    console.log('👥 Guests:', guests);
-    console.log('🧑 Name:', name);
-    console.log('📞 Caller Number:', callerNumber);
+  console.log('🧠 AI reply:', aiReply);
+  console.log('📅 Dates:', dates);
+  console.log('👥 Guests:', guests);
+  console.log('🧑 Name:', name);
+  console.log('📞 Caller Number:', callerNumber);
 
-    if (dates && guests && callerNumber) {
-      const event = {
-        summary: `Booking for ${name || 'guest'} - ${guests} guests`,
-        description: `Airbnb container home booking for ${name || 'guest'} via AI phone assistant.`,
-        start: { date: parseDate(dates[0]), timeZone: 'America/Chicago' },
-        end: { date: parseDate(dates[1] || dates[0]), timeZone: 'America/Chicago' },
-      };
+  if (dates?.length >= 1 && guests && name) {
+    const event = {
+      summary: `Booking for ${name} - ${guests} guests`,
+      description: `Airbnb container home booking for ${name} via AI phone assistant.`,
+      start: { date: parseDate(dates[0]), timeZone: 'America/Chicago' },
+      end: { date: parseDate(dates[1] || dates[0]), timeZone: 'America/Chicago' },
+    };
 
-      try {
-        const calendarRes = await calendar.events.insert({
-          calendarId: process.env.GOOGLE_CALENDAR_ID,
-          resource: event,
-        });
-        console.log('✅ Event created:', calendarRes.data);
+    try {
+      const response = await calendar.events.insert({
+        calendarId: process.env.GOOGLE_CALENDAR_ID,
+        resource: event,
+      });
+      console.log('✅ Event created:', response.data);
 
-        // Send text confirmation
-        await twilioClient.messages.create({
-          body: `✅ Booking confirmed for ${name || 'guest'} from ${dates[0]} to ${dates[1] || dates[0]} for ${guests} guests. See you soon in Livingston, Texas!`,
-          from: process.env.TWILIO_PHONE_NUMBER,
-          to: callerNumber,
-        });
-        console.log('📲 Text confirmation sent to', callerNumber);
-      } catch (err) {
-        console.error('❌ Booking error:', err.response?.data || err.message);
-      }
+      // Send SMS confirmation
+      const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+      const smsBody = `✅ Your booking for ${guests} guests from ${dates[0]} to ${dates[1] || dates[0]} is confirmed under the name ${name}.`;
+
+      await client.messages.create({
+        body: smsBody,
+        from: process.env.TWILIO_PHONE_NUMBER,
+        to: callerNumber,
+      });
+
+      console.log(`📲 Text confirmation sent to ${callerNumber}`);
+    } catch (err) {
+      console.error('❌ Error creating calendar or sending SMS:', err);
     }
-
-    const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
-    gather.say(aiReply, { voice: 'alice' });
   }
+
+  const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
+  gather.say(aiReply, { voice: 'alice' });
 
   res.type('text/xml');
   res.send(twiml.toString());
