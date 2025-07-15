@@ -54,6 +54,8 @@ app.post('/voice', async (req, res) => {
     const aiReply = completion.choices[0].message.content;
     sessions[callSid].push({ role: 'assistant', content: aiReply });
 
+    console.log('🧠 AI Reply:', aiReply);
+
     // Try to extract booking info
     const dateRegex = /(\b(?:july|august|september|october|november|december) \d{1,2}\b)/gi;
     const guestRegex = /\b(\d+) guests?/i;
@@ -61,6 +63,9 @@ app.post('/voice', async (req, res) => {
     const dates = aiReply.match(dateRegex);
     const guestsMatch = userSpeech.match(guestRegex);
     const guests = guestsMatch ? guestsMatch[1] : null;
+
+    console.log('📅 Dates:', dates);
+    console.log('👥 Guests:', guests);
 
     if (dates && guests) {
       const event = {
