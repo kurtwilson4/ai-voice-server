@@ -1,3 +1,30 @@
+const express = require('express');
+const twilio = require('twilio');
+const { OpenAI } = require('openai');
+const { google } = require('googleapis');
+require('dotenv').config();
+
+const VoiceResponse = twilio.twiml.VoiceResponse;
+const app = express();
+app.use(express.urlencoded({ extended: false }));
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// Google Calendar auth setup
+const googleServiceAccount = process.env.GOOGLE_SERVICE_ACCOUNT_BASE64;
+
+if (!googleServiceAccount) {
+  throw new Error("GOOGLE_SERVICE_ACCOUNT is not set in environment variables.");
+}
+
+const auth = new google.auth.GoogleAuth({
+  credentials: JSON.parse(Buffer.from(googleServiceAccount, 'base64').toString('utf-8')),
+  scopes: ['https://www.googleapis.com/auth/calendar'],
+});
+const calendar = google.calendar({ version: 'v3', auth });
+
+const sessions = {};
+
 app.post('/voice', async (req, res) => {
   const twiml = new VoiceResponse();
   const callSid = req.body.CallSid;
@@ -68,4 +95,17 @@ app.post('/voice', async (req, res) => {
 
   res.type('text/xml');
   res.send(twiml.toString());
+});
+
+function parseDate(str) {
+  const clean = str.toLowerCase().replace(/(st|nd|rd|th)/g, '');
+  const [month, day] = clean.split(' ');
+  const year = new Date().getFullYear();
+  const monthIndex = new Date(`${month} 1, ${year}`).getMonth() + 1;
+  return `${year}-${('0' + monthIndex).slice(-2)}-${('0' + day).slice(-2)}`;
+}
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`AI Voice server running on port ${PORT}`);
 });
