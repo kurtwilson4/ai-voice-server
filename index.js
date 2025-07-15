@@ -57,7 +57,7 @@ app.post('/voice', async (req, res) => {
     // Extraction logic
     const dateRegex = /(?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2}(?:st|nd|rd|th)?/gi;
     const guestRegex = /\b(\d+)\s*guests?\b/i;
-    const nameRegex = /\bfor\s+([A-Z][a-z]+\s[A-Z][a-z]+)\b/i;
+    const nameRegex = /\b(?:for|under the name of|under the name|guest name is|name is)\s+([A-Z][a-z]+\s[A-Z][a-z]+)\b/i;
 
     const dates = aiReply.match(dateRegex);
     const guestsMatch = userSpeech.match(guestRegex) || aiReply.match(guestRegex);
@@ -73,7 +73,7 @@ app.post('/voice', async (req, res) => {
 
     if (dates && guests && name) {
       const event = {
-        summary: `Booking for ${name} - ${guests} guests`,
+        summary: `Booking for ${name || 'unknown guest'} (${guests} guests)`,
         description: `Airbnb container home booking for ${name} via AI phone assistant.`,
         start: { date: parseDate(dates[0]), timeZone: 'America/Chicago' },
         end: { date: parseDate(dates[1] || dates[0]), timeZone: 'America/Chicago' },
