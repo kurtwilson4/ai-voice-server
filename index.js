@@ -2,7 +2,6 @@ const express = require('express');
 const twilio = require('twilio');
 const { OpenAI } = require('openai');
 const { google } = require('googleapis');
-const chrono = require('chrono-node');
 require('dotenv').config();
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
@@ -16,6 +15,7 @@ const googleServiceAccount = process.env.GOOGLE_SERVICE_ACCOUNT_BASE64;
 if (!googleServiceAccount) {
   throw new Error("GOOGLE_SERVICE_ACCOUNT is not set in environment variables.");
 }
+
 const auth = new google.auth.GoogleAuth({
   credentials: JSON.parse(Buffer.from(googleServiceAccount, 'base64').toString('utf-8')),
   scopes: ['https://www.googleapis.com/auth/calendar'],
@@ -53,32 +53,24 @@ app.post('/voice', async (req, res) => {
     const aiReply = completion.choices[0].message.content;
     sessions[callSid].push({ role: 'assistant', content: aiReply });
 
-    // Extract guest count from user speech
+    // Extract booking info
+    const dateRegex = /(\b(?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2}\b)/gi;
     const guestRegex = /\b(\d+) guests?/i;
+
+    const dates = aiReply.match(dateRegex);
     const guestsMatch = userSpeech.match(guestRegex);
     const guests = guestsMatch ? guestsMatch[1] : null;
 
-    // Extract dates using chrono-node
-    const parsedDates = chrono.parse(userSpeech);
-    let start = null;
-    let end = null;
-    if (parsedDates.length > 0) {
-      start = parsedDates[0].start.date();
-      end = parsedDates[0].end ? parsedDates[0].end.date() : start;
-    }
-
-    console.log('🧠 AI Reply:', aiReply);
-    console.log('📅 Start Date:', start);
-    console.log('📅 End Date:', end);
+    console.log('🧠 AI reply:', aiReply);
+    console.log('📅 Dates:', dates);
     console.log('👥 Guests:', guests);
 
-    if (start && guests) {
-      const formatDate = (d) => d.toISOString().split('T')[0];
+    if (dates && guests) {
       const event = {
         summary: `Booking for ${guests} guests`,
         description: 'Airbnb container home booking via AI call assistant.',
-        start: { date: formatDate(start), timeZone: 'America/Chicago' },
-        end: { date: formatDate(end), timeZone: 'America/Chicago' },
+        start: { date: parseDate(dates[0]), timeZone: 'America/Chicago' },
+        end: { date: parseDate(dates[1] || dates[0]), timeZone: 'America/Chicago' },
       };
       try {
         const response = await calendar.events.insert({
@@ -98,6 +90,12 @@ app.post('/voice', async (req, res) => {
   res.type('text/xml');
   res.send(twiml.toString());
 });
+
+function parseDate(str) {
+  const [month, day] = str.split(' ');
+  const year = new Date().getFullYear();
+  return `${year}-${('0' + (new Date(`${month} 1`).getMonth() + 1)).slice(-2)}-${('0' + day).slice(-2)}`;
+}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
