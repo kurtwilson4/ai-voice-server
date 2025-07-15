@@ -9,7 +9,7 @@ const app = express();
 app.use(express.urlencoded({ extended: false }));
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
 // Google Calendar auth setup
 const googleServiceAccount = process.env.GOOGLE_SERVICE_ACCOUNT_BASE64;
@@ -30,6 +30,7 @@ app.post('/voice', async (req, res) => {
   const twiml = new VoiceResponse();
   const callSid = req.body.CallSid;
   const userSpeech = req.body.SpeechResult;
+  const callerNumber = req.body.From;
 
   if (!sessions[callSid]) {
     sessions[callSid] = [
@@ -56,7 +57,7 @@ app.post('/voice', async (req, res) => {
     sessions[callSid].push({ role: 'assistant', content: aiReply });
 
     // Extract booking details
-    const dateRegex = /\b(?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2}(?:st|nd|rd|th)?\b/gi;
+    const dateRegex = /(\b(?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2}(?:st|nd|rd|th)?)\b/gi;
     const guestRegex = /\b(\d+)\s+guests?\b/i;
     const nameRegex = /\b(?:guest name is|name is|for|under the name of|under the name)\s+([A-Z][a-z]+\s[A-Z][a-z]+)\b/;
 
@@ -71,33 +72,32 @@ app.post('/voice', async (req, res) => {
     console.log('📅 Dates:', dates);
     console.log('👥 Guests:', guests);
     console.log('🧑 Name:', name);
+    console.log('📞 Caller Number:', callerNumber);
 
-    if (dates && guests) {
+    if (dates && guests && callerNumber) {
       const event = {
-        summary: `Booking for ${name && !name.toLowerCase().includes('providing') ? name : 'guest'} - ${guests} guests`,
+        summary: `Booking for ${name || 'guest'} - ${guests} guests`,
         description: `Airbnb container home booking for ${name || 'guest'} via AI phone assistant.`,
         start: { date: parseDate(dates[0]), timeZone: 'America/Chicago' },
         end: { date: parseDate(dates[1] || dates[0]), timeZone: 'America/Chicago' },
       };
+
       try {
-        const response = await calendar.events.insert({
+        const calendarRes = await calendar.events.insert({
           calendarId: process.env.GOOGLE_CALENDAR_ID,
           resource: event,
         });
-        console.log('✅ Event created:', response.data);
+        console.log('✅ Event created:', calendarRes.data);
 
-        // Send SMS confirmation
-        const smsMessage = `📅 Booking confirmed!\nGuest: ${name || 'N/A'}\nGuests: ${guests}\nDates: ${dates[0]} to ${dates[1] || dates[0]}\n📍 Livingston Container Home`;
-
-        await client.messages.create({
-          body: smsMessage,
+        // Send text confirmation
+        await twilioClient.messages.create({
+          body: `✅ Booking confirmed for ${name || 'guest'} from ${dates[0]} to ${dates[1] || dates[0]} for ${guests} guests. See you soon in Livingston, Texas!`,
           from: process.env.TWILIO_PHONE_NUMBER,
-          to: '+19362233602'
+          to: callerNumber,
         });
-
-        console.log('📩 SMS confirmation sent!');
+        console.log('📲 Text confirmation sent to', callerNumber);
       } catch (err) {
-        console.error('❌ Calendar or SMS error:', err.response?.data || err.message);
+        console.error('❌ Booking error:', err.response?.data || err.message);
       }
     }
 
