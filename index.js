@@ -66,11 +66,12 @@ app.post('/voice', async (req, res) => {
     const guestsMatchAI = aiReply.match(guestRegex);
     const guests = guestsMatchAI?.[1] || guestsMatchUser?.[1] || null;
 
-    console.log('🧠 AI reply:', aiReply);
+    const nameMatch = aiReply.match(nameRegex);
+    const name = nameMatch ? nameMatch[1] : null;
+
     console.log('📅 Dates:', dates);
     console.log('👥 Guests:', guests);
     console.log('🧑 Name:', name);
-    console.log('📞 Caller Number:', callerNumber);
 
     if (dates && guests && name) {
       const event = {
