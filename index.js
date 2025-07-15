@@ -54,7 +54,7 @@ app.post('/voice', async (req, res) => {
     sessions[callSid].push({ role: 'assistant', content: aiReply });
 
     // Extract booking info
-    const dateRegex = /(\b(?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2}\b)/gi;
+    const dateRegex = /(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+\d{1,2}(?:st|nd|rd|th)?/gi;
     const guestRegex = /\b(\d+) guests?/i;
 
     const dates = aiReply.match(dateRegex);
