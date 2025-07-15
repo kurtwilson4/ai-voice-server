@@ -62,8 +62,9 @@ app.post('/voice', async (req, res) => {
     const guestsMatch = userSpeech.match(guestRegex);
     const nameMatch = aiReply.match(nameRegex);
 
-    const guests = guestsMatch ? guestsMatch[1] : null;
-    const name = nameMatch ? nameMatch[1] : null;
+    const guestsMatchUser = userSpeech.match(guestRegex);
+    const guestsMatchAI = aiReply.match(guestRegex);
+    const guests = guestsMatchAI?.[1] || guestsMatchUser?.[1] || null;
 
     console.log('🧠 AI reply:', aiReply);
     console.log('📅 Dates:', dates);
