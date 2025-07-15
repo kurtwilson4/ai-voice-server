@@ -57,7 +57,7 @@ app.post('/voice', async (req, res) => {
     // Extraction logic
     const dateRegex = /(?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2}(?:st|nd|rd|th)?/gi;
     const guestRegex = /\b(\d+)\s*guests?\b/i;
-    const nameRegex = /(?:name (?:is|should be|under the name)?[:\-]?\s*|for )([A-Z][a-z]+\s[A-Z][a-z]+)/i;
+    const nameRegex = /\bfor\s+([A-Z][a-z]+\s[A-Z][a-z]+)\b/i;
 
     const dates = aiReply.match(dateRegex);
     const guestsMatch = userSpeech.match(guestRegex) || aiReply.match(guestRegex);
