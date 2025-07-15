@@ -11,7 +11,7 @@ app.use(express.urlencoded({ extended: false }));
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Google Calendar auth setup
-const googleServiceAccount = process.env.GOOGLE_SERVICE_ACCOUNT;
+const googleServiceAccount = process.env.GOOGLE_SERVICE_ACCOUNT_BASE64;
 
 if (!googleServiceAccount) {
   throw new Error("GOOGLE_SERVICE_ACCOUNT is not set in environment variables.");
