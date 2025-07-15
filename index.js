@@ -9,6 +9,7 @@ const app = express();
 app.use(express.urlencoded({ extended: false }));
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
 // Google Calendar auth setup
 const googleServiceAccount = process.env.GOOGLE_SERVICE_ACCOUNT_BASE64;
@@ -55,7 +56,7 @@ app.post('/voice', async (req, res) => {
     sessions[callSid].push({ role: 'assistant', content: aiReply });
 
     // Extract booking details
-    const dateRegex = /(\b(?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2}(?:st|nd|rd|th)?)\b/gi;
+    const dateRegex = /\b(?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2}(?:st|nd|rd|th)?\b/gi;
     const guestRegex = /\b(\d+)\s+guests?\b/i;
     const nameRegex = /\b(?:guest name is|name is|for|under the name of|under the name)\s+([A-Z][a-z]+\s[A-Z][a-z]+)\b/;
 
@@ -84,8 +85,19 @@ app.post('/voice', async (req, res) => {
           resource: event,
         });
         console.log('✅ Event created:', response.data);
+
+        // Send SMS confirmation
+        const smsMessage = `📅 Booking confirmed!\nGuest: ${name || 'N/A'}\nGuests: ${guests}\nDates: ${dates[0]} to ${dates[1] || dates[0]}\n📍 Livingston Container Home`;
+
+        await client.messages.create({
+          body: smsMessage,
+          from: process.env.TWILIO_PHONE_NUMBER,
+          to: '+19362233602'
+        });
+
+        console.log('📩 SMS confirmation sent!');
       } catch (err) {
-        console.error('❌ Calendar booking error:', err.response?.data || err.message);
+        console.error('❌ Calendar or SMS error:', err.response?.data || err.message);
       }
     }
 
