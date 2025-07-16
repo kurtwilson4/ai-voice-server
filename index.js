@@ -11,9 +11,11 @@ app.use(express.urlencoded({ extended: false }));
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Google Calendar Setup
+// Google Calendar auth setup
 const googleServiceAccount = process.env.GOOGLE_SERVICE_ACCOUNT_BASE64;
-if (!googleServiceAccount) throw new Error("Missing GOOGLE_SERVICE_ACCOUNT.");
+if (!googleServiceAccount) {
+  throw new Error("GOOGLE_SERVICE_ACCOUNT is not set in environment variables.");
+}
 const auth = new google.auth.GoogleAuth({
   credentials: JSON.parse(Buffer.from(googleServiceAccount, 'base64').toString('utf-8')),
   scopes: ['https://www.googleapis.com/auth/calendar'],
@@ -29,90 +31,85 @@ app.post('/voice', async (req, res) => {
   const callerNumber = req.body.From;
 
   if (!sessions[callSid]) {
-    sessions[callSid] = [
-      {
-        role: 'system',
-        content:
-          'You are a helpful booking assistant for LW Wilson Airbnb container homes in Livingston, Texas. Always collect these three details: 1) check-in/check-out dates, 2) number of guests, and 3) name for the booking. Ask only for what is missing, and confirm once all three are collected. Accept info in any order.',
-      },
-    ];
-  }
-
-  if (!userSpeech) {
+    sessions[callSid] = { step: 0, data: {} };
     const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
-    gather.say("Hello, welcome to LW Wilson Airbnb container homes. What can I help you with today?", { voice: 'alice' });
+    gather.say("Hello, welcome to LW Wilson Airbnb Container Homes. What dates would you like to book?", { voice: 'alice' });
     res.type('text/xml');
     return res.send(twiml.toString());
   }
 
-  sessions[callSid].push({ role: 'user', content: userSpeech });
+  const session = sessions[callSid];
 
-  const completion = await openai.chat.completions.create({
-    model: 'gpt-3.5-turbo',
-    messages: sessions[callSid],
-  });
+  const sayNextPrompt = (prompt) => {
+    const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
+    gather.say(prompt, { voice: 'alice' });
+    res.type('text/xml');
+    res.send(twiml.toString());
+  };
 
-  const aiReply = completion.choices[0].message.content;
-  sessions[callSid].push({ role: 'assistant', content: aiReply });
-
-  // Extract info
-  const dateRegex = /\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\s\d{1,2}(?:st|nd|rd|th)?\b/gi;
+  const dateRegex = /\b(?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2}(?:st|nd|rd|th)?\b/gi;
   const guestRegex = /\b(\d+)\s+guests?\b/i;
-  const nameRegex = /\b(?:guest name is|name is|for|under the name of|under the name)\s+([A-Z][a-z]+\s[A-Z][a-z]+)\b/;
+  const nameRegex = /(?:name is|under the name of|for)\s+([A-Z][a-z]+\s[A-Z][a-z]+)/i;
 
-  const dates = [...(aiReply.match(dateRegex) || []), ...(userSpeech.match(dateRegex) || [])];
-  const guestsMatch = userSpeech.match(guestRegex) || aiReply.match(guestRegex);
-  const guests = guestsMatch ? guestsMatch[1] : null;
-
-  const nameMatch = aiReply.match(nameRegex) || userSpeech.match(nameRegex);
-  const name = nameMatch ? nameMatch[1] : null;
-
-  console.log('📅 Dates:', dates);
-  console.log('👥 Guests:', guests);
-  console.log('🧑 Name:', name);
-  console.log('📞 Caller Number:', callerNumber);
-
-  let responsePrompt = '';
-
-  if (!dates.length) responsePrompt += 'What are your check-in and check-out dates? ';
-  if (!guests) responsePrompt += 'How many guests will be staying? ';
-  if (!name) responsePrompt += 'Can I have a name for the reservation? ';
-
-  if (dates.length >= 1 && guests && name) {
-    const event = {
-      summary: `Booking for ${name} - ${guests} guests`,
-      description: `Airbnb container home booking for ${name} via AI phone assistant.`,
-      start: { date: parseDate(dates[0]), timeZone: 'America/Chicago' },
-      end: { date: parseDate(dates[1] || dates[0]), timeZone: 'America/Chicago' },
-    };
-    try {
-      const response = await calendar.events.insert({
-        calendarId: process.env.GOOGLE_CALENDAR_ID,
-        resource: event,
-      });
-      console.log('✅ Event created:', response.data);
-
-      // Send SMS
-      const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-      await client.messages.create({
-        body: `Thanks, ${name}. Your Airbnb is booked from ${dates[0]} to ${dates[1] || dates[0]} for ${guests} guests.`,
-        from: process.env.TWILIO_PHONE_NUMBER,
-        to: callerNumber,
-      });
-      console.log('📲 Text confirmation sent to', callerNumber);
-
-      responsePrompt = `Thank you, ${name}. Your reservation for ${guests} guests from ${dates[0]} to ${dates[1] || dates[0]} is confirmed.`;
-    } catch (err) {
-      console.error('❌ Error:', err.response?.data || err.message);
-      responsePrompt = 'There was an issue saving your booking. Please try again.';
+  if (session.step === 0) {
+    const dates = userSpeech.match(dateRegex);
+    if (dates && dates.length >= 1) {
+      session.data.dates = dates;
+      session.step = 1;
+      return sayNextPrompt("Thank you. How many guests will be staying?");
+    } else {
+      return sayNextPrompt("Sorry, I didn't catch the dates. Please say your check-in and check-out dates.");
     }
   }
 
-  const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
-  gather.say(responsePrompt || aiReply, { voice: 'alice' });
+  if (session.step === 1) {
+    const guestsMatch = userSpeech.match(guestRegex);
+    if (guestsMatch) {
+      session.data.guests = guestsMatch[1];
+      session.step = 2;
+      return sayNextPrompt("Got it. And what name should I put the booking under?");
+    } else {
+      return sayNextPrompt("Sorry, how many guests will be staying?");
+    }
+  }
 
-  res.type('text/xml');
-  res.send(twiml.toString());
+  if (session.step === 2) {
+    const nameMatch = userSpeech.match(nameRegex);
+    if (nameMatch) {
+      session.data.name = nameMatch[1];
+      session.step = 3;
+
+      const { dates, guests, name } = session.data;
+      const event = {
+        summary: `Booking for ${name} - ${guests} guests`,
+        description: `Airbnb container home booking for ${name} via AI phone assistant.`,
+        start: { date: parseDate(dates[0]), timeZone: 'America/Chicago' },
+        end: { date: parseDate(dates[1] || dates[0]), timeZone: 'America/Chicago' },
+      };
+
+      try {
+        const response = await calendar.events.insert({
+          calendarId: process.env.GOOGLE_CALENDAR_ID,
+          resource: event,
+        });
+        console.log('✅ Event created:', response.data);
+
+        const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+        await client.messages.create({
+          body: `Thank you, ${name}. Your Airbnb booking from ${dates[0]} to ${dates[1] || dates[0]} for ${guests} guests is confirmed.`,
+          from: process.env.TWILIO_PHONE_NUMBER,
+          to: callerNumber,
+        });
+        console.log('📲 Text confirmation sent to', callerNumber);
+      } catch (err) {
+        console.error('❌ Calendar or SMS error:', err.response?.data || err.message);
+      }
+
+      return sayNextPrompt(`Thank you, ${session.data.name}. Your booking from ${session.data.dates[0]} to ${session.data.dates[1] || session.data.dates[0]} for ${session.data.guests} guests is confirmed.`);
+    } else {
+      return sayNextPrompt("Sorry, I didn't catch the name. What name should I put the booking under?");
+    }
+  }
 });
 
 function parseDate(str) {
