@@ -31,55 +31,52 @@ app.post('/voice', async (req, res) => {
   const callerNumber = req.body.From;
 
   if (!sessions[callSid]) {
-    sessions[callSid] = { step: 0, data: {} };
+    sessions[callSid] = [
+      {
+        role: 'system',
+        content:
+          'You are a helpful AI assistant that helps users book Airbnb container homes in Livingston, Texas. Ask for check-in and check-out dates, number of guests, and name for the booking. Accept info in any order and confirm once you have all details.',
+      },
+    ];
+  }
+
+  if (!userSpeech) {
     const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
-    gather.say("Hello, welcome to LW Wilson Airbnb Container Homes. What dates would you like to book?", { voice: 'alice' });
-    res.type('text/xml');
-    return res.send(twiml.toString());
-  }
+    gather.say("Hello, welcome to LW Wilson Airbnb Container Homes. What can I help you with today?", {
+      voice: 'Polly.Joanna',
+      language: 'en-US'
+    });
+  } else {
+    sessions[callSid].push({ role: 'user', content: userSpeech });
 
-  const session = sessions[callSid];
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-3.5-turbo',
+      messages: sessions[callSid],
+    });
 
-  const sayNextPrompt = (prompt) => {
-    const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
-    gather.say(prompt, { voice: 'alice' });
-    res.type('text/xml');
-    res.send(twiml.toString());
-  };
+    const aiReply = completion.choices[0].message.content;
+    sessions[callSid].push({ role: 'assistant', content: aiReply });
 
-  const dateRegex = /\b(?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2}(?:st|nd|rd|th)?\b/gi;
-  const guestRegex = /\b(\d+)\s+guests?\b/i;
-  const nameRegex = /(?:name is|under the name of|for)\s+([A-Z][a-z]+\s[A-Z][a-z]+)/i;
+    // Extract details
+    const dateRegex = /\b(?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2}(?:st|nd|rd|th)?\b/gi;
+    const guestRegex = /\b(\d+)\s+guests?\b/i;
+    const nameRegex = /\b(?:guest name is|name is|for|under the name of|under the name)\s+([A-Z][a-z]+\s[A-Z][a-z]+)\b/;
 
-  if (session.step === 0) {
-    const dates = userSpeech.match(dateRegex);
-    if (dates && dates.length >= 1) {
-      session.data.dates = dates;
-      session.step = 1;
-      return sayNextPrompt("Thank you. How many guests will be staying?");
-    } else {
-      return sayNextPrompt("Sorry, I didn't catch the dates. Please say your check-in and check-out dates.");
-    }
-  }
+    const dates = aiReply.match(dateRegex);
+    const guestsMatchUser = userSpeech.match(guestRegex);
+    const guestsMatchAI = aiReply.match(guestRegex);
+    const guests = guestsMatchAI?.[1] || guestsMatchUser?.[1] || null;
 
-  if (session.step === 1) {
-    const guestsMatch = userSpeech.match(guestRegex);
-    if (guestsMatch) {
-      session.data.guests = guestsMatch[1];
-      session.step = 2;
-      return sayNextPrompt("Got it. And what name should I put the booking under?");
-    } else {
-      return sayNextPrompt("Sorry, how many guests will be staying?");
-    }
-  }
+    const nameMatch = aiReply.match(nameRegex);
+    const name = nameMatch ? nameMatch[1] : null;
 
-  if (session.step === 2) {
-    const nameMatch = userSpeech.match(nameRegex);
-    if (nameMatch) {
-      session.data.name = nameMatch[1];
-      session.step = 3;
+    console.log('🧠 AI reply:', aiReply);
+    console.log('📅 Dates:', dates);
+    console.log('👥 Guests:', guests);
+    console.log('🧑 Name:', name);
+    console.log('📞 Caller Number:', callerNumber);
 
-      const { dates, guests, name } = session.data;
+    if (dates && guests && name) {
       const event = {
         summary: `Booking for ${name} - ${guests} guests`,
         description: `Airbnb container home booking for ${name} via AI phone assistant.`,
@@ -94,6 +91,7 @@ app.post('/voice', async (req, res) => {
         });
         console.log('✅ Event created:', response.data);
 
+        // Send SMS confirmation
         const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
         await client.messages.create({
           body: `Thank you, ${name}. Your Airbnb booking from ${dates[0]} to ${dates[1] || dates[0]} for ${guests} guests is confirmed.`,
@@ -104,12 +102,17 @@ app.post('/voice', async (req, res) => {
       } catch (err) {
         console.error('❌ Calendar or SMS error:', err.response?.data || err.message);
       }
-
-      return sayNextPrompt(`Thank you, ${session.data.name}. Your booking from ${session.data.dates[0]} to ${session.data.dates[1] || session.data.dates[0]} for ${session.data.guests} guests is confirmed.`);
-    } else {
-      return sayNextPrompt("Sorry, I didn't catch the name. What name should I put the booking under?");
     }
+
+    const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
+    gather.say(aiReply, {
+      voice: 'Polly.Joanna',
+      language: 'en-US'
+    });
   }
+
+  res.type('text/xml');
+  res.send(twiml.toString());
 });
 
 function parseDate(str) {
