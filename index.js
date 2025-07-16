@@ -1,4 +1,3 @@
-// index.js
 const express = require('express');
 const twilio = require('twilio');
 const { OpenAI } = require('openai');
@@ -45,6 +44,7 @@ app.post('/voice', async (req, res) => {
     gather.say("Hello, welcome to LW Wilson Airbnb Container Homes. What can I help you with today?", { voice: 'alice' });
   } else {
     sessions[callSid].push({ role: 'user', content: userSpeech });
+
     const completion = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: sessions[callSid],
@@ -59,9 +59,6 @@ app.post('/voice', async (req, res) => {
     const nameRegex = /\b(?:guest name is|name is|for|under the name of|under the name)\s+([A-Z][a-z]+\s[A-Z][a-z]+)\b/;
 
     const dates = aiReply.match(dateRegex);
-    const guestsMatch = userSpeech.match(guestRegex);
-    const nameMatch = aiReply.match(nameRegex);
-
     const guestsMatchUser = userSpeech.match(guestRegex);
     const guestsMatchAI = aiReply.match(guestRegex);
     const guests = guestsMatchAI?.[1] || guestsMatchUser?.[1] || null;
@@ -69,9 +66,11 @@ app.post('/voice', async (req, res) => {
     const nameMatch = aiReply.match(nameRegex);
     const name = nameMatch ? nameMatch[1] : null;
 
+    console.log('🧠 AI reply:', aiReply);
     console.log('📅 Dates:', dates);
     console.log('👥 Guests:', guests);
     console.log('🧑 Name:', name);
+    console.log('📞 Caller Number:', callerNumber);
 
     if (dates && guests && name) {
       const event = {
