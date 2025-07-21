@@ -35,7 +35,7 @@ app.post('/voice', async (req, res) => {
       {
         role: 'system',
         content:
-          'You are a helpful AI assistant that helps users book Airbnb container homes in Livingston, Texas. Ask for check-in and check-out dates, number of guests, and name for the booking. Accept the info in any order, and once you have it all, confirm the reservation.',
+          'You are a helpful AI assistant that helps users book Airbnb container homes in Livingston, Texas. Ask for check-in and check-out dates, number of guests, and name for the booking. Once you have all the information, confirm the reservation. Accept the info in any order.',
       },
     ];
   }
@@ -45,7 +45,6 @@ app.post('/voice', async (req, res) => {
     gather.say("Hello, welcome to LW Wilson Airbnb Container Homes. What can I help you with today?", { voice: 'alice' });
   } else {
     sessions[callSid].push({ role: 'user', content: userSpeech });
-
     const completion = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: sessions[callSid],
@@ -54,21 +53,17 @@ app.post('/voice', async (req, res) => {
     const aiReply = completion.choices[0].message.content;
     sessions[callSid].push({ role: 'assistant', content: aiReply });
 
-    // Extract booking details
-    const dateRegex = /(?:the\s*)?(\d{1,2})(?:st|nd|rd|th)?\s*(?:of\s*)?(january|february|march|april|may|june|july|august|september|october|november|december)/gi;
-    const guestRegex = /\b(\d+)\s+guests?/i;
-    const nameRegex = /\b(?:guest name is|name is|for|under the name of|under the name)\s+([A-Z][a-z]+\s[A-Z][a-z]+)/;
+    // Extract details
+    const dateRegex = /\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}(?:st|nd|rd|th)?\b/gi;
+    const guestRegex = /\b(\d+)\s+guests?\b/i;
+    const nameRegex = /\b(?:guest name is|name is|for|under the name of|under the name)\s+([A-Z][a-z]+\s[A-Z][a-z]+)\b/;
 
-    let dates = [];
-    let match;
-    while ((match = dateRegex.exec(aiReply)) !== null) {
-      const day = match[1];
-      const month = match[2];
-      dates.push(`${month} ${day}`);
-    }
+    const datesFromAI = aiReply.match(dateRegex) || [];
+    const datesFromUser = userSpeech.match(dateRegex) || [];
+    const dates = [...datesFromAI, ...datesFromUser];
 
-    const guestsMatchUser = userSpeech.match(guestRegex);
     const guestsMatchAI = aiReply.match(guestRegex);
+    const guestsMatchUser = userSpeech.match(guestRegex);
     const guests = guestsMatchAI?.[1] || guestsMatchUser?.[1] || null;
 
     const nameMatch = aiReply.match(nameRegex);
@@ -94,10 +89,10 @@ app.post('/voice', async (req, res) => {
         });
         console.log('✅ Event created:', response.data);
 
-        // Send SMS confirmation
+        // Send text confirmation
         const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
         await client.messages.create({
-          body: `Thanks ${name}, your Airbnb is booked from ${dates[0]} to ${dates[1] || dates[0]} for ${guests} guests.`,
+          body: `Thank you, ${name}. Your Airbnb booking from ${dates[0]} to ${dates[1] || dates[0]} for ${guests} guests is confirmed.`,
           from: process.env.TWILIO_PHONE_NUMBER,
           to: callerNumber,
         });
