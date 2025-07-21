@@ -1,4 +1,4 @@
-// index.js
+// index.js (GPT JSON mode version)
 const express = require('express');
 const twilio = require('twilio');
 const { OpenAI } = require('openai');
@@ -11,18 +11,30 @@ app.use(express.urlencoded({ extended: false }));
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Google Calendar auth setup
-const googleServiceAccount = process.env.GOOGLE_SERVICE_ACCOUNT_BASE64;
-if (!googleServiceAccount) {
-  throw new Error("GOOGLE_SERVICE_ACCOUNT is not set in environment variables.");
-}
+// Google Calendar auth
 const auth = new google.auth.GoogleAuth({
-  credentials: JSON.parse(Buffer.from(googleServiceAccount, 'base64').toString('utf-8')),
-  scopes: ['https://www.googleapis.com/auth/calendar'],
+  credentials: JSON.parse(Buffer.from(process.env.GOOGLE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf-8')),
+  scopes: ['https://www.googleapis.com/auth/calendar']
 });
 const calendar = google.calendar({ version: 'v3', auth });
 
 const sessions = {};
+
+// GPT function schema
+const bookingFunction = {
+  name: 'book_airbnb',
+  description: 'Collect Airbnb booking info',
+  parameters: {
+    type: 'object',
+    properties: {
+      name: { type: 'string', description: 'Guest full name' },
+      guests: { type: 'integer', description: 'Number of guests' },
+      check_in: { type: 'string', description: 'Check-in date (e.g. July 20th)' },
+      check_out: { type: 'string', description: 'Check-out date (e.g. July 22nd)' }
+    },
+    required: ['name', 'guests', 'check_in', 'check_out']
+  }
+};
 
 app.post('/voice', async (req, res) => {
   const twiml = new VoiceResponse();
@@ -30,82 +42,62 @@ app.post('/voice', async (req, res) => {
   const userSpeech = req.body.SpeechResult;
   const callerNumber = req.body.From;
 
-  if (!sessions[callSid]) {
-    sessions[callSid] = [
-      {
-        role: 'system',
-        content:
-          'You are a helpful AI assistant that helps users book Airbnb container homes in Livingston, Texas. Ask for check-in and check-out dates, number of guests, and name for the booking. Once you have all the information, confirm the reservation. Accept the info in any order.',
-      },
-    ];
-  }
-
   if (!userSpeech) {
     const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
-    gather.say("Hello, welcome to LW Wilson Airbnb Container Homes. What can I help you with today?", { voice: 'alice' });
-  } else {
-    sessions[callSid].push({ role: 'user', content: userSpeech });
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: sessions[callSid],
-    });
+    gather.say("Hello, welcome to LW Wilson Airbnb Container Homes. What can I help you with today?", { voice: 'Polly.Joanna' });
+    res.type('text/xml');
+    return res.send(twiml.toString());
+  }
 
-    const aiReply = completion.choices[0].message.content;
-    sessions[callSid].push({ role: 'assistant', content: aiReply });
+  // Prepare chat context
+  sessions[callSid] = sessions[callSid] || [
+    {
+      role: 'system',
+      content: 'You are a booking assistant for LW Wilson Airbnb Container Homes in Livingston, Texas. Always extract name, guest count, check-in and check-out dates.'
+    }
+  ];
+  sessions[callSid].push({ role: 'user', content: userSpeech });
 
-    // Extract details
-    const dateRegex = /\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}(?:st|nd|rd|th)?\b/gi;
-    const guestRegex = /\b(\d+)\s+guests?\b/i;
-    const nameRegex = /\b(?:guest name is|name is|for|under the name of|under the name)\s+([A-Z][a-z]+\s[A-Z][a-z]+)\b/;
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4-0613',
+    messages: sessions[callSid],
+    tools: [{ type: 'function', function: bookingFunction }],
+    tool_choice: 'auto'
+  });
 
-    const datesFromAI = aiReply.match(dateRegex) || [];
-    const datesFromUser = userSpeech.match(dateRegex) || [];
-    const dates = [...datesFromAI, ...datesFromUser];
+  const toolCall = completion.choices[0].message.tool_calls?.[0];
 
-    const guestsMatchAI = aiReply.match(guestRegex);
-    const guestsMatchUser = userSpeech.match(guestRegex);
-    const guests = guestsMatchAI?.[1] || guestsMatchUser?.[1] || null;
+  let responseSpoken = '';
+  if (toolCall) {
+    const args = JSON.parse(toolCall.function.arguments);
+    const { name, guests, check_in, check_out } = args;
 
-    const nameMatch = aiReply.match(nameRegex);
-    const name = nameMatch ? nameMatch[1] : null;
-
-    console.log('🧠 AI reply:', aiReply);
-    console.log('📅 Dates:', dates);
+    console.log('📅 Dates:', check_in, check_out);
     console.log('👥 Guests:', guests);
     console.log('🧑 Name:', name);
     console.log('📞 Caller Number:', callerNumber);
 
-    if (dates.length >= 1 && guests && name) {
-      const event = {
-        summary: `Booking for ${name} - ${guests} guests`,
-        description: `Airbnb container home booking for ${name} via AI phone assistant.`,
-        start: { date: parseDate(dates[0]), timeZone: 'America/Chicago' },
-        end: { date: parseDate(dates[1] || dates[0]), timeZone: 'America/Chicago' },
-      };
-      try {
-        const response = await calendar.events.insert({
-          calendarId: process.env.GOOGLE_CALENDAR_ID,
-          resource: event,
-        });
-        console.log('✅ Event created:', response.data);
-
-        // Send text confirmation
-        const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-        await client.messages.create({
-          body: `Thank you, ${name}. Your Airbnb booking from ${dates[0]} to ${dates[1] || dates[0]} for ${guests} guests is confirmed.`,
-          from: process.env.TWILIO_PHONE_NUMBER,
-          to: callerNumber,
-        });
-        console.log('📲 Text confirmation sent to', callerNumber);
-      } catch (err) {
-        console.error('❌ Calendar or SMS error:', err.response?.data || err.message);
-      }
+    try {
+      await calendar.events.insert({
+        calendarId: process.env.GOOGLE_CALENDAR_ID,
+        resource: {
+          summary: `Booking for ${name} - ${guests} guests`,
+          description: `Airbnb container home booking for ${name} via AI assistant.`,
+          start: { date: parseDate(check_in), timeZone: 'America/Chicago' },
+          end: { date: parseDate(check_out), timeZone: 'America/Chicago' }
+        }
+      });
+      responseSpoken = `Thank you, ${name}. Your booking for ${guests} guests from ${check_in} to ${check_out} is confirmed.`;
+    } catch (err) {
+      responseSpoken = 'There was a problem creating your booking. Please try again later.';
+      console.error('❌ Calendar error:', err.message);
     }
-
-    const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
-    gather.say(aiReply, { voice: 'alice' });
+  } else {
+    responseSpoken = "Thanks. Can you please provide your check-in and check-out dates, number of guests, and your name?";
   }
 
+  const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
+  gather.say(responseSpoken, { voice: 'Polly.Joanna' });
   res.type('text/xml');
   res.send(twiml.toString());
 });
@@ -119,6 +111,4 @@ function parseDate(str) {
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`AI Voice server running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`AI Voice server running on port ${PORT}`));
