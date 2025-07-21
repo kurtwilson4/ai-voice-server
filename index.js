@@ -13,9 +13,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Google Calendar auth setup
 const googleServiceAccount = process.env.GOOGLE_SERVICE_ACCOUNT_BASE64;
-if (!googleServiceAccount) {
-  throw new Error("GOOGLE_SERVICE_ACCOUNT is not set in environment variables.");
-}
+if (!googleServiceAccount) throw new Error("Missing GOOGLE_SERVICE_ACCOUNT env var.");
 const auth = new google.auth.GoogleAuth({
   credentials: JSON.parse(Buffer.from(googleServiceAccount, 'base64').toString('utf-8')),
   scopes: ['https://www.googleapis.com/auth/calendar'],
@@ -34,8 +32,7 @@ app.post('/voice', async (req, res) => {
     sessions[callSid] = [
       {
         role: 'system',
-        content:
-          'You are a helpful AI assistant that helps users book Airbnb container homes in Livingston, Texas. Ask for check-in and check-out dates, number of guests, and name for the booking. Once you have all the information, confirm the reservation. Accept the info in any order.',
+        content: 'You are a helpful assistant that books Airbnb container homes. Ask for check-in and check-out dates, number of guests, and name. Info may come in any order. Confirm only after all are provided.',
       },
     ];
   }
@@ -53,16 +50,16 @@ app.post('/voice', async (req, res) => {
     const aiReply = completion.choices[0].message.content;
     sessions[callSid].push({ role: 'assistant', content: aiReply });
 
-    // Extract details
+    // Extract booking info
     const dateRegex = /\b(?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2}(?:st|nd|rd|th)?\b/gi;
     const guestRegex = /\b(\d+)\s+guests?\b/i;
     const nameRegex = /\b(?:guest name is|name is|for|under the name of|under the name)\s+([A-Z][a-z]+\s[A-Z][a-z]+)\b/;
 
-    const dates = aiReply.match(dateRegex);
-    const guestsMatchUser = userSpeech.match(guestRegex);
-    const guestsMatchAI = aiReply.match(guestRegex);
-    const guests = guestsMatchAI?.[1] || guestsMatchUser?.[1] || null;
-    const nameMatch = aiReply.match(nameRegex);
+    const dates = [...(aiReply.match(dateRegex) || []), ...(userSpeech.match(dateRegex) || [])];
+    const guestsMatch = userSpeech.match(guestRegex) || aiReply.match(guestRegex);
+    const nameMatch = aiReply.match(nameRegex) || userSpeech.match(nameRegex);
+
+    const guests = guestsMatch ? guestsMatch[1] : null;
     const name = nameMatch ? nameMatch[1] : null;
 
     console.log('📅 Dates:', dates);
@@ -70,30 +67,35 @@ app.post('/voice', async (req, res) => {
     console.log('🧑 Name:', name);
     console.log('📞 Caller Number:', callerNumber);
 
-    if (dates && guests && name) {
+    let missing = [];
+    if (!dates.length) missing.push('check-in and check-out dates');
+    if (!guests) missing.push('number of guests');
+    if (!name) missing.push('your name');
+
+    if (!missing.length) {
       const startDate = parseDate(dates[0]);
       const endDate = parseDate(dates[1] || dates[0]);
 
-      // Check for overlapping events
+      // Calendar availability check
       const existingEvents = await calendar.events.list({
         calendarId: process.env.GOOGLE_CALENDAR_ID,
         timeMin: new Date(startDate).toISOString(),
-        timeMax: new Date(new Date(endDate).getTime() + 86400000).toISOString(),
+        timeMax: new Date(endDate).toISOString(),
         singleEvents: true,
         orderBy: 'startTime',
       });
 
       if (existingEvents.data.items.length > 0) {
-        console.log('❌ Conflict detected. Dates already booked.');
         const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
-        gather.say(`Sorry, those dates are already booked. Please choose different check-in and check-out dates.`, { voice: 'alice' });
+        gather.say("Unfortunately, those dates are already booked. Please choose different dates.", { voice: 'alice' });
         res.type('text/xml');
         return res.send(twiml.toString());
       }
 
+      // Create event
       const event = {
         summary: `Booking for ${name} - ${guests} guests`,
-        description: `Airbnb container home booking for ${name} via AI phone assistant.`,
+        description: `AI booking for ${name} via phone assistant.`,
         start: { date: startDate, timeZone: 'America/Chicago' },
         end: { date: endDate, timeZone: 'America/Chicago' },
       };
@@ -104,22 +106,16 @@ app.post('/voice', async (req, res) => {
           resource: event,
         });
         console.log('✅ Event created:', response.data);
-
-        // Send text confirmation
-        const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-        await client.messages.create({
-          body: `Thank you, ${name}. Your Airbnb booking from ${dates[0]} to ${dates[1] || dates[0]} for ${guests} guests is confirmed.`,
-          from: process.env.TWILIO_PHONE_NUMBER,
-          to: callerNumber,
-        });
-        console.log('📲 Text confirmation sent to', callerNumber);
       } catch (err) {
-        console.error('❌ Calendar or SMS error:', err.response?.data || err.message);
+        console.error('❌ Calendar error:', err.response?.data || err.message);
       }
-    }
 
-    const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
-    gather.say(aiReply, { voice: 'alice' });
+      const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
+      gather.say(`Thanks ${name}, your Airbnb booking from ${dates[0]} to ${dates[1] || dates[0]} for ${guests} guests is confirmed.`, { voice: 'alice' });
+    } else {
+      const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
+      gather.say(`Thanks. I still need: ${missing.join(', ')}.`, { voice: 'alice' });
+    }
   }
 
   res.type('text/xml');
