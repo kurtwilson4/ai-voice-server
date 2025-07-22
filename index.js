@@ -42,7 +42,7 @@ app.post('/voice', async (req, res) => {
 
   if (!userSpeech) {
     const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
-    gather.say("Hello, welcome to LW Wilson Airbnb Container Homes. What can I help you with today?", {
+    gather.say("Hello! Welcome to LW Wilson Airbnb Container Homes! What can I help you with today?", {
       voice: 'Google.en-US-Wavenet-F',
       language: 'en-US',
     });
