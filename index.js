@@ -1,7 +1,5 @@
-// index.js
 const express = require('express');
 const twilio = require('twilio');
-const { OpenAI } = require('openai');
 const { google } = require('googleapis');
 require('dotenv').config();
 
@@ -9,10 +7,11 @@ const VoiceResponse = twilio.twiml.VoiceResponse;
 const app = express();
 app.use(express.urlencoded({ extended: false }));
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
+// Google Calendar Auth
 const googleServiceAccount = process.env.GOOGLE_SERVICE_ACCOUNT_BASE64;
-if (!googleServiceAccount) throw new Error("GOOGLE_SERVICE_ACCOUNT is not set.");
+if (!googleServiceAccount) {
+  throw new Error("GOOGLE_SERVICE_ACCOUNT is not set.");
+}
 const auth = new google.auth.GoogleAuth({
   credentials: JSON.parse(Buffer.from(googleServiceAccount, 'base64').toString('utf-8')),
   scopes: ['https://www.googleapis.com/auth/calendar'],
@@ -43,25 +42,52 @@ app.post('/voice', async (req, res) => {
     return ask("Hello! Welcome to LW Wilson Airbnb Container Homes! What are the check-in and check-out dates you're interested in?");
   }
 
+  const lower = userSpeech.toLowerCase();
+
   if (session.step === 0) {
     const dates = userSpeech.match(/(?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2}(?:st|nd|rd|th)?/gi);
     if (dates && dates.length >= 1) {
-      session.data.dates = dates;
+      const [startDateRaw, endDateRaw] = [dates[0], dates[1] || dates[0]];
+      const startDate = parseDate(startDateRaw);
+      const endDate = parseDate(endDateRaw);
+
+      const existingEvents = await calendar.events.list({
+        calendarId: process.env.GOOGLE_CALENDAR_ID,
+        timeMin: new Date(startDate).toISOString(),
+        timeMax: new Date(new Date(endDate).getTime() + 86400000).toISOString(),
+        singleEvents: true,
+        orderBy: 'startTime',
+      });
+
+      if (existingEvents.data.items.length > 0) {
+        return ask("Sorry, it looks like we have a booking during that time. Is there another date you were interested in?");
+      }
+
+      session.data.dates = [startDateRaw, endDateRaw];
       session.step = 1;
-      return ask("Great. How many adults and children will be staying?");
+      return ask("Great. How many adults and how many children will be staying?");
     } else {
       return ask("Sorry, I didn’t catch the dates. Can you say the check-in and check-out dates again?");
     }
-  } else if (session.step === 1) {
-    const guests = userSpeech.match(/(\d+)\s+(adults?|children|guests?)/i);
-    if (guests) {
-      session.data.guests = guests[1];
+  }
+
+  if (session.step === 1) {
+    const match = lower.match(/(\d+)\s*adults?.*?(\d+)?\s*children?/i);
+    const guests = lower.match(/(\d+)\s*guests?/i);
+
+    if (match || guests) {
+      const totalGuests = match
+        ? parseInt(match[1]) + (parseInt(match[2]) || 0)
+        : parseInt(guests[1]);
+      session.data.guests = totalGuests;
       session.step = 2;
       return ask("Thanks. What is the name the booking will be under?");
     } else {
-      return ask("I didn’t catch the number of guests. Please repeat it.");
+      return ask("I didn’t catch the number of guests. Please repeat how many adults and how many children.");
     }
-  } else if (session.step === 2) {
+  }
+
+  if (session.step === 2) {
     const nameMatch = userSpeech.match(/([A-Z][a-z]+\s[A-Z][a-z]+)/);
     if (nameMatch) {
       session.data.name = nameMatch[1];
@@ -70,33 +96,24 @@ app.post('/voice', async (req, res) => {
       session.step = 3;
       return ask("I didn't quite get the name. Can you please spell it out?");
     }
-  } else if (session.step === 3 && !session.data.name) {
+  }
+
+  if (session.step === 3 && !session.data.name) {
     const letters = userSpeech.match(/[a-z]/gi);
     if (letters && letters.length >= 4) {
-      session.data.name = letters.join('').replace(/(.)(?=[A-Z])/g, '$1 ');
+      session.data.name = letters.join('');
     } else {
       return ask("Sorry, I still didn’t catch that. Please try spelling it again.");
     }
   }
 
-  // If all data collected
   if (session.data.dates && session.data.guests && session.data.name) {
     const [startDate, endDate] = session.data.dates;
-    const start = parseDate(startDate);
-    const end = parseDate(endDate || startDate);
-
-    const isAvailable = await checkAvailability(start, end);
-    if (!isAvailable) {
-      session.step = 0;
-      session.data = {};
-      return ask("Sorry, it looks like we have a booking during that time. Is there another date you were interested in?");
-    }
-
     const event = {
       summary: `Booking for ${session.data.name} - ${session.data.guests} guests`,
       description: `Airbnb container home booking for ${session.data.name} via AI phone assistant.`,
-      start: { date: start, timeZone: 'America/Chicago' },
-      end: { date: end, timeZone: 'America/Chicago' },
+      start: { date: parseDate(startDate), timeZone: 'America/Chicago' },
+      end: { date: parseDate(endDate || startDate), timeZone: 'America/Chicago' },
     };
 
     try {
@@ -104,7 +121,6 @@ app.post('/voice', async (req, res) => {
         calendarId: process.env.GOOGLE_CALENDAR_ID,
         resource: event,
       });
-
       console.log('✅ Event created:', response.data);
 
       const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
@@ -117,34 +133,16 @@ app.post('/voice', async (req, res) => {
       console.error('❌ Calendar/SMS error:', err.response?.data || err.message);
     }
 
-    twiml.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' },
+    twiml.say(
+      { voice: 'Google.en-US-Wavenet-D', language: 'en-US' },
       `Thank you, ${session.data.name}. Your reservation for the container home in Livingston, Texas from ${startDate} to ${endDate || startDate} for ${session.data.guests} guests is confirmed. Enjoy your stay!`
     );
     delete sessions[callSid];
-    res.type('text/xml');
-    return res.send(twiml.toString());
   }
 
   res.type('text/xml');
   res.send(twiml.toString());
 });
-
-async function checkAvailability(startDate, endDate) {
-  try {
-    const events = await calendar.events.list({
-      calendarId: process.env.GOOGLE_CALENDAR_ID,
-      timeMin: `${startDate}T00:00:00-05:00`,
-      timeMax: `${endDate}T23:59:59-05:00`,
-      singleEvents: true,
-      orderBy: 'startTime',
-    });
-
-    return events.data.items.length === 0;
-  } catch (err) {
-    console.error('❌ Availability check error:', err.message);
-    return true; // Fail open if error
-  }
-}
 
 function parseDate(str) {
   const clean = str.toLowerCase().replace(/(st|nd|rd|th)/g, '');
