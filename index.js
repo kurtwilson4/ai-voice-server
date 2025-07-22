@@ -1,4 +1,3 @@
-// index.js
 const express = require('express');
 const twilio = require('twilio');
 const { OpenAI } = require('openai');
@@ -35,7 +34,7 @@ app.post('/voice', async (req, res) => {
       {
         role: 'system',
         content:
-          'You are a helpful and friendly AI assistant that helps users book Airbnb container homes in Livingston, Texas. Accept booking details (check-in/out dates, number of guests, name) in any order. Confirm the booking once all details are received. Use natural language and sound like a human assistant.',
+          'You are a helpful AI assistant that helps users book Airbnb container homes in Livingston, Texas. Ask for check-in and check-out dates, number of guests, and name for the booking. Once you have all the information, confirm the reservation. Accept the info in any order.',
       },
     ];
   }
@@ -43,7 +42,7 @@ app.post('/voice', async (req, res) => {
   if (!userSpeech) {
     const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
     gather.say("Hello! Welcome to LW Wilson Airbnb Container Homes! What can I help you with today?", {
-      voice: 'Google.en-US-Wavenet-F',
+      voice: 'Google.en-US-Wavenet-D',
       language: 'en-US',
     });
   } else {
@@ -65,6 +64,7 @@ app.post('/voice', async (req, res) => {
     const guestsMatchUser = userSpeech.match(guestRegex);
     const guestsMatchAI = aiReply.match(guestRegex);
     const guests = guestsMatchAI?.[1] || guestsMatchUser?.[1] || null;
+
     const nameMatch = aiReply.match(nameRegex);
     const name = nameMatch ? nameMatch[1] : null;
 
@@ -81,43 +81,29 @@ app.post('/voice', async (req, res) => {
         end: { date: parseDate(dates[1] || dates[0]), timeZone: 'America/Chicago' },
       };
       try {
-        const existing = await calendar.events.list({
+        const response = await calendar.events.insert({
           calendarId: process.env.GOOGLE_CALENDAR_ID,
-          timeMin: new Date(parseDate(dates[0])).toISOString(),
-          timeMax: new Date(parseDate(dates[1] || dates[0])).toISOString(),
-          singleEvents: true,
+          resource: event,
         });
+        console.log('✅ Event created:', response.data);
 
-        if (existing.data.items.length === 0) {
-          const response = await calendar.events.insert({
-            calendarId: process.env.GOOGLE_CALENDAR_ID,
-            resource: event,
-          });
-          console.log('✅ Event created:', response.data);
-
-          const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-          await client.messages.create({
-            body: `Thanks ${name}, your Airbnb booking from ${dates[0]} to ${dates[1] || dates[0]} for ${guests} guests is confirmed.`,
-            from: process.env.TWILIO_PHONE_NUMBER,
-            to: callerNumber,
-          });
-          console.log('📲 Text confirmation sent to', callerNumber);
-        } else {
-          console.log('⚠️ Dates already booked, skipping calendar entry');
-          twiml.say("Sorry, those dates are no longer available. Would you like to try different ones?", {
-            voice: 'Google.en-US-Wavenet-F',
-            language: 'en-US',
-          });
-          res.type('text/xml');
-          return res.send(twiml.toString());
-        }
+        const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+        await client.messages.create({
+          body: `Thank you, ${name}. Your Airbnb booking from ${dates[0]} to ${dates[1] || dates[0]} for ${guests} guests is confirmed.`,
+          from: process.env.TWILIO_PHONE_NUMBER,
+          to: callerNumber,
+        });
+        console.log('📲 Text confirmation sent to', callerNumber);
       } catch (err) {
         console.error('❌ Calendar or SMS error:', err.response?.data || err.message);
       }
     }
 
     const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
-    gather.say(aiReply, { voice: 'Google.en-US-Wavenet-F', language: 'en-US' });
+    gather.say(aiReply, {
+      voice: 'Google.en-US-Wavenet-D',
+      language: 'en-US',
+    });
   }
 
   res.type('text/xml');
