@@ -45,24 +45,36 @@ app.post('/voice', async (req, res) => {
     return ask("Hello! Welcome to LW Wilson Airbnb Container Homes! What are the check-in and check-out dates you're interested in?");
   }
 
+  console.log('🔊 UserSpeech:', userSpeech);
   const lower = userSpeech.toLowerCase();
+
   if (session.step === 0) {
     const dates = userSpeech.match(/(?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2}(?:st|nd|rd|th)?/gi);
     if (dates && dates.length >= 1) {
       session.data.dates = dates;
       session.step = 1;
-      return ask("Great. How many guests will be staying?");
+      return ask("Great. How many guests will be staying? You can say something like '2 adults and 1 child'.");
     } else {
       return ask("Sorry, I didn’t catch the dates. Can you say the check-in and check-out dates again?");
     }
   } else if (session.step === 1) {
-    const guests = userSpeech.match(/\b(\d+)\s+guests?/i);
+    const numberWords = {
+      one: 1, two: 2, three: 3, four: 4, five: 5,
+      six: 6, seven: 7, eight: 8, nine: 9, ten: 10
+    };
+    let guests = null;
+    const guestMatch = userSpeech.match(/(?:for\s)?(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s?(adults?|children|kids|guests?|people)?/i);
+    if (guestMatch) {
+      const rawGuest = guestMatch[1].toLowerCase();
+      guests = numberWords[rawGuest] || parseInt(rawGuest);
+    }
+
     if (guests) {
-      session.data.guests = guests[1];
+      session.data.guests = guests;
       session.step = 2;
       return ask("Thanks. What is the name the booking will be under?");
     } else {
-      return ask("I didn’t catch the number of guests. Please repeat it.");
+      return ask("I didn’t catch the number of guests. Please say something like '2 adults and 1 child'.");
     }
   } else if (session.step === 2) {
     const nameMatch = userSpeech.match(/([A-Z][a-z]+\s[A-Z][a-z]+)/);
