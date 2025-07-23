@@ -46,72 +46,44 @@ app.post('/voice', async (req, res) => {
   }
 
   const lower = userSpeech.toLowerCase();
-
   if (session.step === 0) {
     const dates = userSpeech.match(/(?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2}(?:st|nd|rd|th)?/gi);
     if (dates && dates.length >= 1) {
       session.data.dates = dates;
       session.step = 1;
-
-      // Check calendar for double booking
-      const [start, end] = [parseDate(dates[0]), parseDate(dates[1] || dates[0])];
-      const events = await calendar.events.list({
-        calendarId: process.env.GOOGLE_CALENDAR_ID,
-        timeMin: new Date(start).toISOString(),
-        timeMax: new Date(new Date(end).getTime() + 24 * 60 * 60 * 1000).toISOString(),
-        singleEvents: true,
-        orderBy: 'startTime',
-      });
-      if (events.data.items.length > 0) {
-        return ask("Sorry, it looks like we already have a booking during that time. Is there another date you're interested in?");
-      }
-
-      return ask("Great. How many adults and how many children will be staying?");
+      return ask("Great. How many guests will be staying?");
     } else {
       return ask("Sorry, I didn’t catch the dates. Can you say the check-in and check-out dates again?");
     }
   } else if (session.step === 1) {
-    const adultMatch = lower.match(/(\d+)\s+adults?/i);
-    const childMatch = lower.match(/(\d+)\s+children?/i);
-    const totalGuests = (adultMatch ? parseInt(adultMatch[1]) : 0) + (childMatch ? parseInt(childMatch[1]) : 0);
-    if (totalGuests > 0) {
-      session.data.guests = totalGuests;
+    const guests = userSpeech.match(/\b(\d+)\s+guests?/i);
+    if (guests) {
+      session.data.guests = guests[1];
       session.step = 2;
       return ask("Thanks. What is the name the booking will be under?");
     } else {
-      return ask("I didn’t catch the number of guests. Please repeat how many adults and children will be staying.");
+      return ask("I didn’t catch the number of guests. Please repeat it.");
     }
   } else if (session.step === 2) {
-    const nameMatch = userSpeech.match(/([A-Z][a-z]+(?:\s[A-Z][a-z]+)+)/);
+    const nameMatch = userSpeech.match(/([A-Z][a-z]+\s[A-Z][a-z]+)/);
     if (nameMatch) {
       session.data.name = nameMatch[1];
       session.step = 3;
-      return ask("Thanks. Lastly, what is the best email for your confirmation?");
     } else {
-      session.step = 3.5;
+      session.step = 3;
       return ask("I didn't quite get the name. Can you please spell it out?");
     }
-  } else if (session.step === 3.5 && !session.data.name) {
+  } else if (session.step === 3 && !session.data.name) {
     const letters = userSpeech.match(/[a-z]/gi);
     if (letters && letters.length >= 4) {
-      session.data.name = letters.join('');
-      session.step = 3;
-      return ask("Thanks. Lastly, what is the best email for your confirmation?");
+      session.data.name = letters.join('').replace(/(.)(?=[A-Z])/g, '$1 ');
     } else {
-      return ask("Sorry, I still didn’t catch that. Please try spelling the name again.");
-    }
-  } else if (session.step === 3) {
-    const emailMatch = lower.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/);
-    if (emailMatch) {
-      session.data.email = emailMatch[0];
-      session.step = 4;
-    } else {
-      return ask("I didn’t catch your email. Could you say it again?");
+      return ask("Sorry, I still didn’t catch that. Please try spelling it again.");
     }
   }
 
-  // ✅ All data collected, create event
-  if (session.step === 4 && session.data.dates && session.data.guests && session.data.name && session.data.email) {
+  // If all data collected
+  if (session.data.dates && session.data.guests && session.data.name) {
     const [startDate, endDate] = session.data.dates;
     const event = {
       summary: `Booking for ${session.data.name} - ${session.data.guests} guests`,
@@ -119,42 +91,23 @@ app.post('/voice', async (req, res) => {
       start: { date: parseDate(startDate), timeZone: 'America/Chicago' },
       end: { date: parseDate(endDate || startDate), timeZone: 'America/Chicago' },
     };
-
     try {
       const response = await calendar.events.insert({
         calendarId: process.env.GOOGLE_CALENDAR_ID,
         resource: event,
       });
       console.log('✅ Event created:', response.data);
-    } catch (err) {
-      console.error('❌ Calendar error:', err.response?.data || err.message);
-    }
 
-    // Send email
-    try {
-      const nodemailer = require('nodemailer');
-      const transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-          user: process.env.EMAIL_FROM,
-          pass: process.env.EMAIL_PASS,
-        },
+      const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+      await client.messages.create({
+        body: `Thank you, ${session.data.name}. Your Airbnb booking from ${startDate} to ${endDate || startDate} for ${session.data.guests} guests is confirmed.`,
+        from: process.env.TWILIO_PHONE_NUMBER,
+        to: callerNumber,
       });
-
-      await transporter.sendMail({
-        from: `"LW Wilson Airbnb" <${process.env.EMAIL_FROM}>`,
-        to: session.data.email,
-        subject: "Your Airbnb Booking is Confirmed!",
-        text: `Thank you, ${session.data.name}. Your Airbnb booking from ${startDate} to ${endDate || startDate} for ${session.data.guests} guests is confirmed. We look forward to hosting you in Livingston, Texas!`,
-      });
-
-      console.log(`📧 Email confirmation sent to ${session.data.email}`);
     } catch (err) {
-      console.error('❌ Email error:', err.message);
+      console.error('❌ Calendar/SMS error:', err.response?.data || err.message);
     }
-
-    // Final response
-    twiml.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, `Thank you, ${session.data.name}. Your reservation for the container home in Livingston, Texas from ${startDate} to ${endDate || startDate} for ${session.data.guests} guests is confirmed. A confirmation email has been sent to ${session.data.email}. Enjoy your stay!`);
+    twiml.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, `Thank you, ${session.data.name}. Your reservation for the container home in Livingston, Texas from ${startDate} to ${endDate || startDate} for ${session.data.guests} guests is confirmed. Enjoy your stay!`);
     delete sessions[callSid];
   }
 
