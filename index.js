@@ -1,15 +1,12 @@
 // index.js
 const express = require('express');
 const twilio = require('twilio');
-const { OpenAI } = require('openai');
 const { google } = require('googleapis');
 require('dotenv').config();
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
 const app = express();
 app.use(express.urlencoded({ extended: false }));
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const googleServiceAccount = process.env.GOOGLE_SERVICE_ACCOUNT_BASE64;
 if (!googleServiceAccount) {
@@ -46,6 +43,7 @@ app.post('/voice', async (req, res) => {
   }
 
   const lower = userSpeech.toLowerCase();
+
   if (session.step === 0) {
     const dates = userSpeech.match(/(?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2}(?:st|nd|rd|th)?/gi);
     if (dates && dates.length >= 1) {
@@ -56,16 +54,26 @@ app.post('/voice', async (req, res) => {
       return ask("Sorry, I didn’t catch the dates. Can you say the check-in and check-out dates again?");
     }
   } else if (session.step === 1) {
-    const guests = userSpeech.match(/\b(\d+)\s+guests?/i);
+    let guests = null;
+    const digitMatch = userSpeech.match(/\b(\d+)\b/);
+    if (digitMatch) guests = digitMatch[1];
+
+    const wordsToNumbers = {
+      one: 1, two: 2, three: 3, four: 4, five: 5,
+      six: 6, seven: 7, eight: 8, nine: 9, ten: 10
+    };
+    const wordMatch = userSpeech.match(/\b(one|two|three|four|five|six|seven|eight|nine|ten)\b/i);
+    if (!guests && wordMatch) guests = wordsToNumbers[wordMatch[1].toLowerCase()];
+
     if (guests) {
-      session.data.guests = guests[1];
+      session.data.guests = guests;
       session.step = 2;
       return ask("Thanks. What is the name the booking will be under?");
     } else {
       return ask("I didn’t catch the number of guests. Please repeat it.");
     }
   } else if (session.step === 2) {
-    const nameMatch = userSpeech.match(/([A-Z][a-z]+\s[A-Z][a-z]+)/);
+    const nameMatch = userSpeech.match(/([A-Z][a-z]+ [A-Z][a-z]+)/);
     if (nameMatch) {
       session.data.name = nameMatch[1];
       session.step = 3;
@@ -76,13 +84,12 @@ app.post('/voice', async (req, res) => {
   } else if (session.step === 3 && !session.data.name) {
     const letters = userSpeech.match(/[a-z]/gi);
     if (letters && letters.length >= 4) {
-      session.data.name = letters.join('').replace(/(.)(?=[A-Z])/g, '$1 ');
+      session.data.name = letters.join('');
     } else {
       return ask("Sorry, I still didn’t catch that. Please try spelling it again.");
     }
   }
 
-  // If all data collected
   if (session.data.dates && session.data.guests && session.data.name) {
     const [startDate, endDate] = session.data.dates;
     const event = {
@@ -107,7 +114,7 @@ app.post('/voice', async (req, res) => {
     } catch (err) {
       console.error('❌ Calendar/SMS error:', err.response?.data || err.message);
     }
-    twiml.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, `Thank you, ${session.data.name}. Your reservation for the container home in Livingston, Texas from ${startDate} to ${endDate || startDate} for ${session.data.guests} guests is confirmed. Enjoy your stay!`);
+    twiml.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, `Thank you, ${session.data.name}. Your reservation from ${startDate} to ${endDate || startDate} for ${session.data.guests} guests is confirmed. Enjoy your stay!`);
     delete sessions[callSid];
   }
 
