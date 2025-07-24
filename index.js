@@ -50,25 +50,23 @@ app.post('/voice', async (req, res) => {
       const [startDate, endDate] = dates;
       const isoStart = parseDate(startDate);
       const isoEnd = parseDate(endDate || startDate);
-      const timeMin = new Date(isoStart).toISOString();
-      const timeMax = new Date(new Date(isoEnd).getTime() + 24 * 60 * 60 * 1000).toISOString();
 
       try {
         // Check for double booking
         const events = await calendar.events.list({
           calendarId: process.env.GOOGLE_CALENDAR_ID,
-          timeMin,
-          timeMax,
+
           singleEvents: true,
           orderBy: 'startTime',
         });
 
         if (events.data.items.length > 0) {
-          console.log(`Requested dates ${startDate} to ${endDate || startDate} already booked`);
+
           return ask("Sorry, it looks like we already have a booking during that time. Is there another date you were interested in?");
         }
       } catch (err) {
         console.error("Error checking calendar availability:", err.response?.data || err.message);
+
         return ask("Something went wrong while checking availability. Could you provide another date?");
       }
 
