@@ -23,7 +23,7 @@ const calendar = google.calendar({ version: 'v3', auth });
 const transporter = nodemailer.createTransport({
   service: process.env.EMAIL_SERVICE || 'gmail',
   auth: {
-  // default to the kurtwaynewilson@gmail.com account if EMAIL_USER is not set
+    // default to the kurtwaynewilson@gmail.com account if EMAIL_USER is not set
     user: process.env.EMAIL_USER || 'kurtwaynewilson@gmail.com',
     pass: process.env.EMAIL_PASS,
   },
