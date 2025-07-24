@@ -64,7 +64,14 @@ app.post('/voice', async (req, res) => {
       one: 1, two: 2, three: 3, four: 4, five: 5,
       six: 6, seven: 7, eight: 8, nine: 9, ten: 10
     };
-    let guests = guestMatch?.[0]?.match(/\d+/)?.[0] || numberWords[guestMatch?.[0]?.toLowerCase()];
+    let guests;
+    if (guestMatch) {
+      const firstWord = guestMatch[0].split(/\s+/)[0].toLowerCase();
+      guests = parseInt(firstWord, 10);
+      if (isNaN(guests)) {
+        guests = numberWords[firstWord];
+      }
+    }
     if (guests) {
       session.data.guests = guests;
       session.step = 2;
