@@ -62,14 +62,11 @@ app.post('/voice', async (req, res) => {
         });
 
         if (events.data.items.length > 0) {
-          session.step = 0;
-          session.data = {};
+          console.log(`Requested dates ${startDate} to ${endDate || startDate} already booked`);
           return ask("Sorry, it looks like we already have a booking during that time. Is there another date you were interested in?");
         }
       } catch (err) {
         console.error("Error checking calendar availability:", err.response?.data || err.message);
-        session.step = 0;
-        session.data = {};
         return ask("Something went wrong while checking availability. Could you provide another date?");
       }
 
