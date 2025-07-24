@@ -53,15 +53,18 @@ app.post('/voice', async (req, res) => {
 
       try {
         // Check for double booking
+        const isoStartTime = new Date(isoStart).toISOString();
+        const isoEndExclusiveTime = new Date(new Date(isoEnd).getTime() + 24 * 60 * 60 * 1000).toISOString();
+
         const events = await calendar.events.list({
           calendarId: process.env.GOOGLE_CALENDAR_ID,
-
+          timeMin: isoStartTime,
+          timeMax: isoEndExclusiveTime,
           singleEvents: true,
           orderBy: 'startTime',
         });
 
         if (events.data.items.length > 0) {
-
           return ask("Sorry, it looks like we already have a booking during that time. Is there another date you were interested in?");
         }
       } catch (err) {
