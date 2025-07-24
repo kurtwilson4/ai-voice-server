@@ -192,11 +192,25 @@ app.post('/voice', async (req, res) => {
     }
   }
 
-  // Step 4: Capture Email and send confirmation
+  // Step 4: Capture Email and confirm with the caller
   else if (session.step === 4) {
     const emailMatch = userSpeech.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
     if (emailMatch) {
       session.data.email = emailMatch[0];
+      const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
+      gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, `I heard ${session.data.email}. Is that correct? Please say yes or no.`);
+      session.step = 5;
+      return res.type('text/xml').send(twiml.toString());
+    } else {
+      return ask("I didn't catch that email. Could you repeat the email address?");
+    }
+  }
+
+  // Step 5: Handle confirmation of email and send message
+  else if (session.step === 5) {
+    const positive = /\b(yes|yeah|yep|correct)\b/i;
+    const negative = /\b(no|nope|incorrect|wrong)\b/i;
+    if (positive.test(userSpeech)) {
       try {
         await transporter.sendMail({
           from: 'lwwilsoncontainerhomes@gmail.com',
@@ -211,8 +225,11 @@ app.post('/voice', async (req, res) => {
       }
       delete sessions[callSid];
       return res.type('text/xml').send(twiml.toString());
+    } else if (negative.test(userSpeech)) {
+      session.step = 4;
+      return ask('Sorry about that. Please say the correct email address.');
     } else {
-      return ask("I didn't catch that email. Could you repeat the email address?");
+      return ask(`Please answer yes or no. Is ${session.data.email} correct?`);
     }
   }
 
