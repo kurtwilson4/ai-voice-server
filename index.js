@@ -1,14 +1,11 @@
 const express = require('express');
 const twilio = require('twilio');
-const { OpenAI } = require('openai');
 const { google } = require('googleapis');
 require('dotenv').config();
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
 const app = express();
 app.use(express.urlencoded({ extended: false }));
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Google Calendar auth setup
 const googleServiceAccount = process.env.GOOGLE_SERVICE_ACCOUNT_BASE64;
