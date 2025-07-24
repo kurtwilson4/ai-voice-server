@@ -1,6 +1,5 @@
 const express = require('express');
 const twilio = require('twilio');
-const { OpenAI } = require('openai');
 const { google } = require('googleapis');
 require('dotenv').config();
 
@@ -8,12 +7,11 @@ const VoiceResponse = twilio.twiml.VoiceResponse;
 const app = express();
 app.use(express.urlencoded({ extended: false }));
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Google Calendar auth setup
 const googleServiceAccount = process.env.GOOGLE_SERVICE_ACCOUNT_BASE64;
 if (!googleServiceAccount) {
-  throw new Error("GOOGLE_SERVICE_ACCOUNT is not set in environment variables.");
+  throw new Error('GOOGLE_SERVICE_ACCOUNT_BASE64 is not set in environment variables.');
 }
 const auth = new google.auth.GoogleAuth({
   credentials: JSON.parse(Buffer.from(googleServiceAccount, 'base64').toString('utf-8')),
@@ -45,7 +43,6 @@ app.post('/voice', async (req, res) => {
     return ask("Hello! Welcome to LW Wilson Airbnb Container Homes. What are the check-in and check-out dates you're interested in?");
   }
 
-  const lower = userSpeech.toLowerCase();
 
   // Step 0: Ask for Dates
   if (session.step === 0) {
@@ -79,7 +76,7 @@ app.post('/voice', async (req, res) => {
 
   // Step 2: Ask for Name
   else if (session.step === 2) {
-    const nameMatch = userSpeech.match(/([A-Z][a-z]+\s[A-Z][a-z]+)/);
+  const nameMatch = userSpeech.match(/([A-Za-z]+\s+[A-Za-z]+)/i);
     if (nameMatch) {
       session.data.name = nameMatch[1];
       session.step = 3;
