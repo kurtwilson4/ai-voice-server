@@ -47,6 +47,32 @@ app.post('/voice', async (req, res) => {
   if (session.step === 0) {
     const dates = userSpeech.match(/(?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2}(?:st|nd|rd|th)?/gi);
     if (dates && dates.length >= 1) {
+      const [startDate, endDate] = dates;
+      const isoStart = parseDate(startDate);
+      const isoEnd = parseDate(endDate || startDate);
+
+      try {
+        // Check for double booking
+        const events = await calendar.events.list({
+          calendarId: process.env.GOOGLE_CALENDAR_ID,
+          timeMin: new Date(isoStart).toISOString(),
+          timeMax: new Date(isoEnd).toISOString(),
+          singleEvents: true,
+          orderBy: 'startTime',
+        });
+
+        if (events.data.items.length > 0) {
+          session.step = 0;
+          session.data = {};
+          return ask("Sorry, it looks like we already have a booking during that time. Is there another date you were interested in?");
+        }
+      } catch (err) {
+        console.error("Error checking calendar availability:", err.response?.data || err.message);
+        session.step = 0;
+        session.data = {};
+        return ask("Something went wrong while checking availability. Could you provide another date?");
+      }
+
       session.data.dates = dates;
       session.step = 1;
       return ask("Great. How many guests will be staying?");
@@ -110,23 +136,6 @@ app.post('/voice', async (req, res) => {
     const isoEnd = parseDate(endDate || startDate);
 
     try {
-      // Check for double booking
-      const events = await calendar.events.list({
-        calendarId: process.env.GOOGLE_CALENDAR_ID,
-        timeMin: new Date(isoStart).toISOString(),
-        timeMax: new Date(isoEnd).toISOString(),
-        singleEvents: true,
-        orderBy: 'startTime',
-      });
-
-      if (events.data.items.length > 0) {
-        twiml.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, "Sorry, it looks like we already have a booking during that time. Is there another date you were interested in?");
-        session.step = 0;
-        session.data = {};
-        res.type('text/xml');
-        return res.send(twiml.toString());
-      }
-
       // Book it
       const event = {
         summary: `Booking for ${session.data.name} - ${session.data.guests} guests`,
