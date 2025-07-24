@@ -1,6 +1,7 @@
 const express = require('express');
 const twilio = require('twilio');
 const { google } = require('googleapis');
+const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
@@ -18,7 +19,41 @@ const auth = new google.auth.GoogleAuth({
 });
 const calendar = google.calendar({ version: 'v3', auth });
 
+// Email transporter setup
+const transporter = nodemailer.createTransport({
+  service: process.env.EMAIL_SERVICE || 'gmail',
+  auth: {
+  // default to the kurtwaynewilson@gmail.com account if EMAIL_USER is not set
+    user: process.env.EMAIL_USER || 'kurtwaynewilson@gmail.com',
+    pass: process.env.EMAIL_PASS,
+  },
+});
+
 const sessions = {};
+
+async function finalizeBooking(session) {
+  const [startDate, endDate] = session.data.dates;
+
+  const isoStart = parseDate(startDate);
+  const isoEnd = parseDate(endDate || startDate);
+  const isoEndExclusive = new Date(new Date(isoEnd).getTime() + 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+
+  // Book the calendar event
+  const event = {
+    summary: `Booking for ${session.data.name} - ${session.data.guests} guests`,
+    description: `Airbnb container home booking for ${session.data.name} via AI phone assistant.`,
+    start: { date: isoStart, timeZone: 'America/Chicago' },
+    end: { date: isoEndExclusive, timeZone: 'America/Chicago' },
+  };
+  await calendar.events.insert({
+    calendarId: process.env.GOOGLE_CALENDAR_ID,
+    resource: event,
+  });
+
+  return { startDate, endDate: endDate || startDate };
+}
 
 app.post('/voice', async (req, res) => {
   const twiml = new VoiceResponse();
@@ -108,10 +143,24 @@ app.post('/voice', async (req, res) => {
 
   // Step 2: Ask for Name
   else if (session.step === 2) {
-  const nameMatch = userSpeech.match(/([A-Za-z]+\s+[A-Za-z]+)/i);
+    const nameMatch = userSpeech.match(/([A-Za-z]+\s+[A-Za-z]+)/i);
     if (nameMatch) {
       session.data.name = nameMatch[1];
-      session.step = 3;
+      try {
+        const { startDate, endDate } = await finalizeBooking(session);
+        twiml.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' },
+          `Thank you, ${session.data.name}. Your reservation for the container home in Livingston, Texas from ${startDate} to ${endDate} for ${session.data.guests} guests is confirmed.`
+        );
+        const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
+        gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, 'To send you a confirmation email, please say your email address.');
+        session.step = 4;
+        return res.type('text/xml').send(twiml.toString());
+      } catch (err) {
+        console.error('❌ Error creating calendar event:', err.response?.data || err.message);
+        twiml.say('Something went wrong while trying to book your reservation. Please try again later.');
+        delete sessions[callSid];
+        return res.type('text/xml').send(twiml.toString());
+      }
     } else {
       session.step = 3;
       return ask("I didn't quite get the name. Can you please spell it out?");
@@ -123,49 +172,65 @@ app.post('/voice', async (req, res) => {
     const letters = userSpeech.match(/[a-z]/gi);
     if (letters && letters.length >= 4) {
       session.data.name = letters.join('');
+      try {
+        const { startDate, endDate } = await finalizeBooking(session);
+        twiml.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' },
+          `Thank you, ${session.data.name}. Your reservation for the container home in Livingston, Texas from ${startDate} to ${endDate} for ${session.data.guests} guests is confirmed.`
+        );
+        const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
+        gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, 'To send you a confirmation email, please say your email address.');
+        session.step = 4;
+        return res.type('text/xml').send(twiml.toString());
+      } catch (err) {
+        console.error('❌ Error creating calendar event:', err.response?.data || err.message);
+        twiml.say('Something went wrong while trying to book your reservation. Please try again later.');
+        delete sessions[callSid];
+        return res.type('text/xml').send(twiml.toString());
+      }
     } else {
       return ask("Sorry, I still didn’t catch that. Please try spelling the name again.");
     }
   }
 
-  // ✅ Final step: Create Event if all data collected
-  if (session.data.dates && session.data.guests && session.data.name) {
-    const [startDate, endDate] = session.data.dates;
-
-    const isoStart = parseDate(startDate);
-    const isoEnd = parseDate(endDate || startDate);
-    const isoEndExclusive = new Date(new Date(isoEnd).getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0,10);
-
-    try {
-      // Book it
-      const event = {
-        summary: `Booking for ${session.data.name} - ${session.data.guests} guests`,
-        description: `Airbnb container home booking for ${session.data.name} via AI phone assistant.`,
-        start: { date: isoStart, timeZone: 'America/Chicago' },
-        end: { date: isoEndExclusive, timeZone: 'America/Chicago' },
-      };
-      await calendar.events.insert({
-        calendarId: process.env.GOOGLE_CALENDAR_ID,
-        resource: event,
-      });
-
-      // Send confirmation text
-      const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-      await client.messages.create({
-        body: `Thanks ${session.data.name}, your Airbnb container home is booked from ${startDate} to ${endDate || startDate} for ${session.data.guests} guest(s).`,
-        from: process.env.TWILIO_PHONE_NUMBER,
-        to: callerNumber,
-      });
-
-      twiml.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' },
-        `Thank you, ${session.data.name}. Your reservation for the container home in Livingston, Texas from ${startDate} to ${endDate || startDate} for ${session.data.guests} guests is confirmed. Enjoy your stay!`
-      );
-    } catch (err) {
-      console.error("❌ Error creating event or sending SMS:", err.response?.data || err.message);
-      twiml.say("Something went wrong while trying to book your reservation. Please try again later.");
+  // Step 4: Capture Email and confirm with the caller
+  else if (session.step === 4) {
+    const emailMatch = userSpeech.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+    if (emailMatch) {
+      session.data.email = emailMatch[0];
+      const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
+      gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, `I heard ${session.data.email}. Is that correct? Please say yes or no.`);
+      session.step = 5;
+      return res.type('text/xml').send(twiml.toString());
+    } else {
+      return ask("I didn't catch that email. Could you repeat the email address?");
     }
+  }
 
-    delete sessions[callSid];
+  // Step 5: Handle confirmation of email and send message
+  else if (session.step === 5) {
+    const positive = /\b(yes|yeah|yep|correct)\b/i;
+    const negative = /\b(no|nope|incorrect|wrong)\b/i;
+    if (positive.test(userSpeech)) {
+      try {
+        await transporter.sendMail({
+          from: 'kurtwaynewilson@gmail.com',
+          to: session.data.email,
+          subject: 'Your booking is confirmed',
+          text: `Hi ${session.data.name}, your Airbnb container home in Livingston, Texas is booked from ${session.data.dates[0]} to ${session.data.dates[1] || session.data.dates[0]} for ${session.data.guests} guest(s).`,
+        });
+        twiml.say('Thanks! A confirmation email has been sent. Goodbye.');
+      } catch (err) {
+        console.error('❌ Error sending confirmation email:', err.response?.data || err.message);
+        twiml.say('Your booking is confirmed, but we could not send the email at this time.');
+      }
+      delete sessions[callSid];
+      return res.type('text/xml').send(twiml.toString());
+    } else if (negative.test(userSpeech)) {
+      session.step = 4;
+      return ask('Sorry about that. Please say the correct email address.');
+    } else {
+      return ask(`Please answer yes or no. Is ${session.data.email} correct?`);
+    }
   }
 
   res.type('text/xml');
