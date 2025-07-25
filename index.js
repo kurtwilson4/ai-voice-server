@@ -79,7 +79,7 @@ app.post('/voice', async (req, res) => {
 
   // Step 0: Ask for Dates
   if (session.step === 0) {
-    const dates = userSpeech.match(/(?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2}(?:st|nd|rd|th)?/gi);
+    const dates = parseDateRange(userSpeech);
     if (dates && dates.length >= 1) {
       const [startDate, endDate] = dates;
       const isoStart = parseDate(startDate);
@@ -271,6 +271,29 @@ function parseDate(str) {
   const year = new Date().getFullYear();
   const monthIndex = new Date(`${month} 1, ${year}`).getMonth() + 1;
   return `${year}-${('0' + monthIndex).slice(-2)}-${('0' + day).slice(-2)}`;
+}
+
+function parseDateRange(text) {
+  const months =
+    'january|february|march|april|may|june|july|august|september|october|november|december';
+  const re = new RegExp(
+    `(?:from\\s+)?(${months})\\s+(\\d{1,2})(?:st|nd|rd|th)?` +
+      `(?:\\s*(?:to|through|thru|until|till|-|\\u2013)\\s*(?:the\\s*)?(?:(${months})\\s+)?` +
+      `(\\d{1,2})(?:st|nd|rd|th)?)?`,
+    'i'
+  );
+  const m = text.toLowerCase().match(re);
+  if (!m) return null;
+  const startMonth = m[1];
+  const startDay = m[2];
+  const endMonth = m[3] || startMonth;
+  const endDay = m[4];
+  const start = `${startMonth} ${startDay}`;
+  if (endDay) {
+    const end = `${endMonth} ${endDay}`;
+    return [start, end];
+  }
+  return [start];
 }
 
 function parseSpokenName(text) {
@@ -470,6 +493,7 @@ module.exports = {
   parseSpokenName,
   parseSpokenEmail,
   parseDate,
+  parseDateRange,
   spellEmailForSpeech,
   app,
 };

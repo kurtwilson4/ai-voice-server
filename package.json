@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "node test/parseSpokenName.test.js"
+    "test": "node test/parseSpokenName.test.js && node test/parseDateRange.test.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
