@@ -99,7 +99,16 @@ app.post('/voice', async (req, res) => {
           orderBy: 'startTime',
         });
 
-        if (events.data.items.length > 0) {
+        const startObj = new Date(isoStartTime);
+        const endObj = new Date(isoEndExclusiveTime);
+
+        const hasConflict = events.data.items.some(ev => {
+          const evStart = new Date(ev.start.date || ev.start.dateTime);
+          const evEnd = new Date(ev.end.date || ev.end.dateTime);
+          return evStart < endObj && evEnd > startObj;
+        });
+
+        if (hasConflict) {
           return ask("Sorry, it looks like we already have a booking during that time. Is there another date you were interested in?");
         }
       } catch (err) {
