@@ -235,6 +235,8 @@ app.post('/voice', async (req, res) => {
       twiml.say('Thanks! A confirmation email has been sent. Goodbye.');
       res.type('text/xml').send(twiml.toString());
 
+      console.log('Email confirmed:', session.data.email, 'Call SID:', callSid);
+
       transporter
         .sendMail({
           from: 'lwwilsoncontainerhomes@gmail.com',
