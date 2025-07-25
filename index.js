@@ -283,7 +283,12 @@ function parseSpokenName(text) {
 
   if (!cleaned) return null;
 
-  const rawTokens = cleaned.split(/\s+/);
+  const rawTokens = cleaned.split(/\s+/).flatMap(tok => {
+    if (/^[a-z](?:-[a-z])+$/i.test(tok)) {
+      return tok.split('-');
+    }
+    return tok;
+  });
 
   // Map common letter words and homophones to their single letter equivalent
   const letterMap = {
