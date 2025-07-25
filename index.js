@@ -166,7 +166,8 @@ app.post('/voice', async (req, res) => {
           hints: 'gmail.com yahoo.com outlook.com hotmail.com icloud.com'
         });
         gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, 'To send you a confirmation email, please say your email address.');
-        session.step = 3;
+        // Move directly to email capture after successfully recording the name
+        session.step = 4;
         return res.type('text/xml').send(twiml.toString());
       } catch (err) {
         console.error('❌ Error creating calendar event:', err.response?.data || err.message);
