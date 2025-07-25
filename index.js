@@ -151,9 +151,9 @@ app.post('/voice', async (req, res) => {
 
   // Step 2: Ask for Name
   else if (session.step === 2) {
-    const nameMatch = userSpeech.match(/(?:my\s+name\s+is\s+)?([A-Za-z]+(?:\s+[A-Za-z]+)+)/i);
-    if (nameMatch) {
-      session.data.name = nameMatch[1];
+    const parsedName = parseSpokenName(userSpeech);
+    if (parsedName) {
+      session.data.name = parsedName;
       try {
         const { startDate, endDate } = await finalizeBooking(session);
         twiml.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' },
@@ -182,9 +182,9 @@ app.post('/voice', async (req, res) => {
 
   // Step 3: Handle Spelled Name
   else if (session.step === 3 && !session.data.name) {
-    const tokens = userSpeech.split(/\s+/).filter(t => /^[A-Za-z]$/.test(t));
-    if (tokens.length >= 4) {
-      session.data.name = tokens.join('');
+    const spelledName = parseSpokenName(userSpeech);
+    if (spelledName) {
+      session.data.name = spelledName;
       try {
         const { startDate, endDate } = await finalizeBooking(session);
         twiml.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' },
@@ -212,8 +212,8 @@ app.post('/voice', async (req, res) => {
 
   // Step 4: Capture Email and confirm spelling
   else if (session.step === 4) {
-    const normalizedEmailSpeech = parseSpokenEmail(userSpeech);
-    const emailMatch = normalizedEmailSpeech.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+    const parsedEmail = parseSpokenEmail(userSpeech);
+    const emailMatch = parsedEmail.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
     if (emailMatch) {
       session.data.email = emailMatch[0];
       const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
@@ -268,16 +268,96 @@ function parseDate(str) {
   return `${year}-${('0' + monthIndex).slice(-2)}-${('0' + day).slice(-2)}`;
 }
 
-function parseSpokenEmail(text) {
-  return text
+function parseSpokenName(text) {
+  let cleaned = text
     .toLowerCase()
-    // remove common leading phrases like "my email is", "it's", etc.
+    .replace(/(?:my\s+name\s+is|the\s+name\s+is|name\s+is|this\s+is|it's|it\s+is)\s*/g, '')
+    .replace(/[.,?!]/g, ' ')
+    .replace(/\b(spelled|spell|spelling)\b/g, '')
+    .trim();
+
+  if (!cleaned) return null;
+
+  const tokens = cleaned.split(/\s+/);
+  const letters = [];
+  const words = [];
+  for (const tok of tokens) {
+    if (/^[a-z]$/.test(tok)) {
+      letters.push(tok);
+    } else {
+      words.push(tok);
+    }
+  }
+
+  const spelled = letters.join('');
+  const namePart = words.join(' ');
+
+  if (spelled && namePart) {
+    if (namePart.replace(/\s+/g, '') === spelled) {
+      return capitalizeWords(namePart);
+    }
+    return capitalizeWords(`${namePart} ${spelled}`);
+  }
+
+  if (spelled) return capitalizeWords(spelled);
+  if (namePart) return capitalizeWords(namePart);
+
+  return null;
+}
+
+function capitalizeWords(str) {
+  return str
+    .split(' ')
+    .filter(Boolean)
+    .map(s => s.charAt(0).toUpperCase() + s.slice(1))
+    .join(' ');
+}
+
+function parseSpokenEmail(text) {
+  let cleaned = text
+    .toLowerCase()
     .replace(/(?:my\s+email(?:\s+address)?\s+is|the\s+email(?:\s+address)?\s+is|email(?:\s+address)?\s+is|it's|it\s+is|this\s+is)[:\s]*/g, '')
-    .replace(/\s+at\s+/g, '@')
-    .replace(/\s+dot\s+/g, '.')
-    .replace(/\s+underscore\s+/g, '_')
-    .replace(/\s+(?:dash|hyphen)\s+/g, '-')
-    .replace(/\s+/g, '');
+    .replace(/[?!,]/g, ' ')
+    .replace(/\s+at\s+/g, ' @ ')
+    .replace(/\s+dot\s+/g, ' . ')
+    .replace(/\s+underscore\s+/g, ' _ ')
+    .replace(/\s+(?:dash|hyphen)\s+/g, ' - ')
+    .trim();
+
+  const tokens = cleaned.split(/\s+/);
+  const parts = [];
+  let letters = [];
+  const pushLetters = () => {
+    if (letters.length) {
+      parts.push(letters.join(''));
+      letters = [];
+    }
+  };
+
+  for (const t of tokens) {
+    if (/^[a-z]$/.test(t)) {
+      letters.push(t);
+    } else {
+      pushLetters();
+      parts.push(t);
+    }
+  }
+  pushLetters();
+
+  let result = '';
+  const joiners = new Set(['@', '.', '_', '-']);
+  for (const part of parts) {
+    if (joiners.has(part)) {
+      result += part;
+    } else {
+      if (result && !joiners.has(result.slice(-1))) result += ' ';
+      result += part;
+    }
+  }
+
+  result = result.trim();
+  const match = result.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
+  return match ? match[0] : result.replace(/\s+/g, '');
 }
 
 function spellEmailForSpeech(email) {
