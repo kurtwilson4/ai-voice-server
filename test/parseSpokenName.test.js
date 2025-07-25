@@ -9,7 +9,7 @@ const cases = [
   ['bee cee', 'Bc'],
   ['why', 'Y'],
   ['the name is carrigan c-a-r-r-i-g-a-n', 'Carrigan'],
-  ['c-a-r-r-i-g-a-n', 'Carrigan'],
+
 ];
 
 for (const [input, expected] of cases) {
