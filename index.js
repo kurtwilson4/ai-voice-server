@@ -236,7 +236,7 @@ app.post('/voice', async (req, res) => {
           from: 'lwwilsoncontainerhomes@gmail.com',
           to: session.data.email,
           subject: 'Your booking is confirmed',
-          text: `Hi ${session.data.name}, your Airbnb container home in Livingston, Texas is booked from ${session.data.dates[0]} to ${session.data.dates[1] || session.data.dates[0]} for ${session.data.guests} guest(s).`,
+          text: `Hi ${session.data.name}, your Airbnb container home in Livingston, Texas is booked from ${session.data.dates[0]} to ${session.data.dates[1] || session.data.dates[0]} for ${session.data.guests} guest(s). If you have any questions about your reservation, please call 936-328-1615.`,
         });
         twiml.say('Thanks! A confirmation email has been sent. Goodbye.');
       } catch (err) {
