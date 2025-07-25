@@ -317,6 +317,13 @@ function capitalizeWords(str) {
 }
 
 function parseSpokenEmail(text) {
+  const wordToLetter = {
+    bee: 'b', cee: 'c', see: 'c', dee: 'd', eee: 'e', eff: 'f', gee: 'g',
+    aitch: 'h', jay: 'j', kay: 'k', ell: 'l', em: 'm', en: 'n', oh: 'o',
+    pee: 'p', cue: 'q', are: 'r', ess: 's', tee: 't', you: 'u', vee: 'v',
+    doubleu: 'w', 'double-you': 'w', ex: 'x', why: 'y', zee: 'z', zed: 'z'
+  };
+
   let cleaned = text
     .toLowerCase()
     .replace(/(?:my\s+email(?:\s+address)?\s+is|the\s+email(?:\s+address)?\s+is|email(?:\s+address)?\s+is|it's|it\s+is|this\s+is)[:\s]*/g, '')
@@ -338,7 +345,10 @@ function parseSpokenEmail(text) {
   };
 
   for (const t of tokens) {
-    if (/^[a-z]$/.test(t)) {
+    const mapped = wordToLetter[t];
+    if (mapped) {
+      letters.push(mapped);
+    } else if (/^[a-z]$/.test(t)) {
       letters.push(t);
     } else {
       pushLetters();
