@@ -230,20 +230,22 @@ app.post('/voice', async (req, res) => {
     const positive = /\b(yes|correct|yeah)\b/i.test(userSpeech);
     const negative = /\b(no|incorrect|nah)\b/i.test(userSpeech);
     if (positive) {
-      try {
-        await transporter.sendMail({
+      // Respond to Twilio immediately to avoid timeouts, then send the email
+      twiml.say('Thanks! A confirmation email has been sent. Goodbye.');
+      res.type('text/xml').send(twiml.toString());
+
+      transporter
+        .sendMail({
           from: 'lwwilsoncontainerhomes@gmail.com',
           to: session.data.email,
           subject: 'Your booking is confirmed',
           text: `Hi ${session.data.name}, your Airbnb container home in Livingston, Texas is booked from ${session.data.dates[0]} to ${session.data.dates[1] || session.data.dates[0]} for ${session.data.guests} guest(s). If you have any questions about your reservation, please call 936-328-1615.`,
-        });
-        twiml.say('Thanks! A confirmation email has been sent. Goodbye.');
-      } catch (err) {
-        console.error('❌ Error sending confirmation email:', err.response?.data || err.message);
-        twiml.say('Your booking is confirmed, but we could not send the email at this time.');
-      }
-      delete sessions[callSid];
-      return res.type('text/xml').send(twiml.toString());
+        })
+        .catch(err => {
+          console.error('❌ Error sending confirmation email:', err.response?.data || err.message);
+        })
+        .finally(() => delete sessions[callSid]);
+      return;
     } else if (negative) {
       session.step = 4;
       const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST', hints: 'gmail.com yahoo.com outlook.com hotmail.com icloud.com' });
