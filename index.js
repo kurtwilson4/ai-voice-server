@@ -251,6 +251,8 @@ function parseDate(str) {
 function parseSpokenEmail(text) {
   return text
     .toLowerCase()
+    // remove common leading phrases like "my email is", "it's", etc.
+    .replace(/(?:my\s+email(?:\s+address)?\s+is|the\s+email(?:\s+address)?\s+is|email(?:\s+address)?\s+is|it's|it\s+is|this\s+is)[:\s]*/g, '')
     .replace(/\s+at\s+/g, '@')
     .replace(/\s+dot\s+/g, '.')
     .replace(/\s+underscore\s+/g, '_')
