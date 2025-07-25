@@ -151,7 +151,12 @@ app.post('/voice', async (req, res) => {
         twiml.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' },
           `Thank you, ${session.data.name}. Your reservation for the container home in Livingston, Texas from ${startDate} to ${endDate} for ${session.data.guests} guests is confirmed.`
         );
-        const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
+        const gather = twiml.gather({
+          input: 'speech',
+          action: '/voice',
+          method: 'POST',
+          hints: 'gmail.com yahoo.com outlook.com hotmail.com icloud.com'
+        });
         gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, 'To send you a confirmation email, please say your email address.');
         session.step = 4;
         return res.type('text/xml').send(twiml.toString());
@@ -177,7 +182,12 @@ app.post('/voice', async (req, res) => {
         twiml.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' },
           `Thank you, ${session.data.name}. Your reservation for the container home in Livingston, Texas from ${startDate} to ${endDate} for ${session.data.guests} guests is confirmed.`
         );
-        const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
+        const gather = twiml.gather({
+          input: 'speech',
+          action: '/voice',
+          method: 'POST',
+          hints: 'gmail.com yahoo.com outlook.com hotmail.com icloud.com'
+        });
         gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, 'To send you a confirmation email, please say your email address.');
         session.step = 4;
         return res.type('text/xml').send(twiml.toString());
@@ -194,7 +204,8 @@ app.post('/voice', async (req, res) => {
 
   // Step 4: Capture Email and send confirmation
   else if (session.step === 4) {
-    const emailMatch = userSpeech.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+    const normalizedEmailSpeech = parseSpokenEmail(userSpeech);
+    const emailMatch = normalizedEmailSpeech.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
     if (emailMatch) {
       session.data.email = emailMatch[0];
       try {
@@ -226,6 +237,16 @@ function parseDate(str) {
   const year = new Date().getFullYear();
   const monthIndex = new Date(`${month} 1, ${year}`).getMonth() + 1;
   return `${year}-${('0' + monthIndex).slice(-2)}-${('0' + day).slice(-2)}`;
+}
+
+function parseSpokenEmail(text) {
+  return text
+    .toLowerCase()
+    .replace(/\s+at\s+/g, '@')
+    .replace(/\s+dot\s+/g, '.')
+    .replace(/\s+underscore\s+/g, '_')
+    .replace(/\s+(?:dash|hyphen)\s+/g, '-')
+    .replace(/\s+/g, '');
 }
 
 const PORT = process.env.PORT || 3000;
