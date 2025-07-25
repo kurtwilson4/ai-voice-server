@@ -79,10 +79,7 @@ app.post('/voice', async (req, res) => {
 
   // Step 0: Ask for Property
   if (session.step === 0) {
-    const lower = userSpeech.toLowerCase();
-    let property;
-    if (lower.includes('jalapeno')) property = 'Jalapeno';
-    else if (lower.includes('bluebonnet')) property = 'Bluebonnet';
+    const property = parseProperty(userSpeech);
     if (property) {
       session.data.property = property;
       session.step = 1;
@@ -286,6 +283,21 @@ function parseDate(str) {
   const year = new Date().getFullYear();
   const monthIndex = new Date(`${month} 1, ${year}`).getMonth() + 1;
   return `${year}-${('0' + monthIndex).slice(-2)}-${('0' + day).slice(-2)}`;
+}
+
+function parseProperty(text) {
+  const normalized = text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // remove accents
+    .replace(/[\-]/g, ' ') // treat hyphens as spaces
+    .replace(/\s+/g, ' '); // collapse whitespace
+  const match = normalized.match(/\b(?:the\s+)?(jalapeno|blue\s*bonnet)\b/);
+  if (!match) return null;
+  const word = match[1].replace(/\s+/g, '');
+  if (word === 'jalapeno') return 'Jalapeno';
+  if (word === 'bluebonnet') return 'Bluebonnet';
+  return null;
 }
 
 function parseSpokenEmail(text) {
