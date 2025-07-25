@@ -143,7 +143,7 @@ app.post('/voice', async (req, res) => {
 
   // Step 2: Ask for Name
   else if (session.step === 2) {
-    const nameMatch = userSpeech.match(/([A-Za-z]+\s+[A-Za-z]+)/i);
+    const nameMatch = userSpeech.match(/(?:my\s+name\s+is\s+)?([A-Za-z]+(?:\s+[A-Za-z]+)+)/i);
     if (nameMatch) {
       session.data.name = nameMatch[1];
       try {
@@ -169,9 +169,9 @@ app.post('/voice', async (req, res) => {
 
   // Step 3: Handle Spelled Name
   else if (session.step === 3 && !session.data.name) {
-    const letters = userSpeech.match(/[a-z]/gi);
-    if (letters && letters.length >= 4) {
-      session.data.name = letters.join('');
+    const tokens = userSpeech.split(/\s+/).filter(t => /^[A-Za-z]$/.test(t));
+    if (tokens.length >= 4) {
+      session.data.name = tokens.join('');
       try {
         const { startDate, endDate } = await finalizeBooking(session);
         twiml.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' },
