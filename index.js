@@ -42,8 +42,8 @@ async function finalizeBooking(session) {
 
   // Book the calendar event
   const event = {
-    summary: `Booking for ${session.data.name} - ${session.data.guests} guests`,
-    description: `Airbnb container home booking for ${session.data.name} via AI phone assistant.`,
+    summary: `Booking for ${session.data.name} - ${session.data.guests} guests - ${session.data.property}`,
+    description: `Airbnb container home booking for ${session.data.name} at the ${session.data.property} via AI phone assistant.`,
     start: { date: isoStart, timeZone: 'America/Chicago' },
     end: { date: isoEndExclusive, timeZone: 'America/Chicago' },
   };
@@ -74,12 +74,25 @@ app.post('/voice', async (req, res) => {
   };
 
   if (!userSpeech) {
-    return ask("Hello! Welcome to LW Wilson Airbnb Container Homes. What are the check-in and check-out dates you're interested in?");
+    return ask("Hello! Welcome to LW Wilson Airbnb Container Homes. Which property are you interested in booking—the Jalapeno or The Bluebonnet?");
   }
 
-
-  // Step 0: Ask for Dates
+  // Step 0: Ask for Property
   if (session.step === 0) {
+    const lower = userSpeech.toLowerCase();
+    let property;
+    if (lower.includes('jalapeno')) property = 'Jalapeno';
+    else if (lower.includes('bluebonnet')) property = 'Bluebonnet';
+    if (property) {
+      session.data.property = property;
+      session.step = 1;
+      return ask("Great. What are the check-in and check-out dates you're interested in?");
+    }
+    return ask("Which property would you like to book, the Jalapeno or The Bluebonnet?");
+  }
+
+  // Step 1: Ask for Dates
+  if (session.step === 1) {
     const dates = userSpeech.match(/(?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2}(?:st|nd|rd|th)?/gi);
     if (dates && dates.length >= 1) {
       const [startDate, endDate] = dates;
@@ -105,6 +118,12 @@ app.post('/voice', async (req, res) => {
         const hasConflict = events.data.items.some(ev => {
           const evStart = new Date(ev.start.date || ev.start.dateTime);
           const evEnd = new Date(ev.end.date || ev.end.dateTime);
+          const summary = (ev.summary || '') + ' ' + (ev.description || '');
+          const match = summary.toLowerCase().match(/(jalapeno|bluebonnet)/);
+          const evProperty = match ? match[1] : null;
+          if (evProperty && evProperty !== session.data.property.toLowerCase()) {
+            return false;
+          }
           return evStart < endObj && evEnd > startObj;
         });
 
@@ -118,15 +137,15 @@ app.post('/voice', async (req, res) => {
       }
 
       session.data.dates = dates;
-      session.step = 1;
+      session.step = 2;
       return ask("Great. How many guests will be staying?");
     } else {
       return ask("Sorry, I didn’t catch the dates. Can you say the check-in and check-out dates again?");
     }
   }
 
-  // Step 1: Ask for Number of Guests
-  else if (session.step === 1) {
+  // Step 2: Ask for Number of Guests
+  else if (session.step === 2) {
     const guestRegex = /\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b(?:\s+(?:guests?|people|persons|will be staying))?/i;
     const guestMatch = userSpeech.match(guestRegex);
     const numberWords = {
@@ -143,15 +162,15 @@ app.post('/voice', async (req, res) => {
     }
     if (guests) {
       session.data.guests = guests;
-      session.step = 2;
+      session.step = 3;
       return ask("Thanks. What is the name the booking will be under?");
     } else {
       return ask("I didn’t catch the number of guests. Please repeat how many guests will be staying.");
     }
   }
 
-  // Step 2: Ask for Name
-  else if (session.step === 2) {
+  // Step 3: Ask for Name
+  else if (session.step === 3) {
     const nameMatch = userSpeech.match(/(?:my\s+name\s+is\s+)?([A-Za-z]+(?:\s+[A-Za-z]+)+)/i);
     if (nameMatch) {
       session.data.name = nameMatch[1];
@@ -167,7 +186,7 @@ app.post('/voice', async (req, res) => {
           hints: 'gmail.com yahoo.com outlook.com hotmail.com icloud.com'
         });
         gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, 'To send you a confirmation email, please say your email address.');
-        session.step = 4;
+        session.step = 5;
         return res.type('text/xml').send(twiml.toString());
       } catch (err) {
         console.error('❌ Error creating calendar event:', err.response?.data || err.message);
@@ -176,13 +195,13 @@ app.post('/voice', async (req, res) => {
         return res.type('text/xml').send(twiml.toString());
       }
     } else {
-      session.step = 3;
+      session.step = 4;
       return ask("I didn't quite get the name. Can you please spell it out?");
     }
   }
 
-  // Step 3: Handle Spelled Name
-  else if (session.step === 3 && !session.data.name) {
+  // Step 4: Handle Spelled Name
+  else if (session.step === 4 && !session.data.name) {
     const tokens = userSpeech.split(/\s+/).filter(t => /^[A-Za-z]$/.test(t));
     if (tokens.length >= 4) {
       session.data.name = tokens.join('');
@@ -198,7 +217,7 @@ app.post('/voice', async (req, res) => {
           hints: 'gmail.com yahoo.com outlook.com hotmail.com icloud.com'
         });
         gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, 'To send you a confirmation email, please say your email address.');
-        session.step = 4;
+        session.step = 5;
         return res.type('text/xml').send(twiml.toString());
       } catch (err) {
         console.error('❌ Error creating calendar event:', err.response?.data || err.message);
@@ -211,23 +230,23 @@ app.post('/voice', async (req, res) => {
     }
   }
 
-  // Step 4: Capture Email and confirm spelling
-  else if (session.step === 4) {
+  // Step 5: Capture Email and confirm spelling
+  else if (session.step === 5) {
     const normalizedEmailSpeech = parseSpokenEmail(userSpeech);
     const emailMatch = normalizedEmailSpeech.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
     if (emailMatch) {
       session.data.email = emailMatch[0];
       const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
       gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, `I heard your email as ${spellEmailForSpeech(session.data.email)}. Is that correct? Please say yes or no.`);
-      session.step = 5;
+      session.step = 6;
       return res.type('text/xml').send(twiml.toString());
     } else {
       return ask("I didn't catch that email. Could you repeat the email address?");
     }
   }
 
-  // Step 5: Confirm email address
-  else if (session.step === 5) {
+  // Step 6: Confirm email address
+  else if (session.step === 6) {
     const positive = /\b(yes|correct|yeah)\b/i.test(userSpeech);
     const negative = /\b(no|incorrect|nah)\b/i.test(userSpeech);
     if (positive) {
@@ -236,7 +255,7 @@ app.post('/voice', async (req, res) => {
           from: 'lwwilsoncontainerhomes@gmail.com',
           to: session.data.email,
           subject: 'Your booking is confirmed',
-          text: `Hi ${session.data.name}, your Airbnb container home in Livingston, Texas is booked from ${session.data.dates[0]} to ${session.data.dates[1] || session.data.dates[0]} for ${session.data.guests} guest(s). If you have any questions about your reservation, please call 936-328-1615.`,
+          text: `Hi ${session.data.name}, your booking for the ${session.data.property} container home in Livingston, Texas is confirmed from ${session.data.dates[0]} to ${session.data.dates[1] || session.data.dates[0]} for ${session.data.guests} guest(s). If you have any questions about your reservation, please call 936-328-1615.`,
         });
         twiml.say('Thanks! A confirmation email has been sent. Goodbye.');
       } catch (err) {
@@ -246,7 +265,7 @@ app.post('/voice', async (req, res) => {
       delete sessions[callSid];
       return res.type('text/xml').send(twiml.toString());
     } else if (negative) {
-      session.step = 4;
+      session.step = 5;
       const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST', hints: 'gmail.com yahoo.com outlook.com hotmail.com icloud.com' });
       gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, 'Okay, please say your email address again.');
       return res.type('text/xml').send(twiml.toString());
