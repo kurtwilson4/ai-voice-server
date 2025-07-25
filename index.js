@@ -285,6 +285,19 @@ function parseSpokenName(text) {
 
   const rawTokens = cleaned.split(/\s+/);
 
+  // Expand tokens like "c-a-r-r-i-e" into individual letters
+  const expandedTokens = [];
+  for (const tok of rawTokens) {
+    if (tok.includes('-')) {
+      const parts = tok.split('-');
+      if (parts.every(p => /^[a-z]$/.test(p))) {
+        expandedTokens.push(...parts);
+        continue;
+      }
+    }
+    expandedTokens.push(tok);
+  }
+
   // Map common letter words and homophones to their single letter equivalent
   const letterMap = {
     a: 'a', ay: 'a',
@@ -317,16 +330,16 @@ function parseSpokenName(text) {
 
   // Normalize tokens so sequences like "k a y" and "kay" both become "kay"
   const tokens = [];
-  for (let i = 0; i < rawTokens.length; i++) {
-    let tok = rawTokens[i];
-    if (i + 2 < rawTokens.length && /^[a-z]$/.test(rawTokens[i]) && /^[a-z]$/.test(rawTokens[i + 1]) && /^[a-z]$/.test(rawTokens[i + 2])) {
-      const tri = rawTokens[i] + rawTokens[i + 1] + rawTokens[i + 2];
+  for (let i = 0; i < expandedTokens.length; i++) {
+    let tok = expandedTokens[i];
+    if (i + 2 < expandedTokens.length && /^[a-z]$/.test(expandedTokens[i]) && /^[a-z]$/.test(expandedTokens[i + 1]) && /^[a-z]$/.test(expandedTokens[i + 2])) {
+      const tri = expandedTokens[i] + expandedTokens[i + 1] + expandedTokens[i + 2];
       if (letterMap[tri]) {
         tok = tri;
         i += 2;
       }
-    } else if (i + 1 < rawTokens.length && /^[a-z]$/.test(rawTokens[i]) && /^[a-z]$/.test(rawTokens[i + 1])) {
-      const duo = rawTokens[i] + rawTokens[i + 1];
+    } else if (i + 1 < expandedTokens.length && /^[a-z]$/.test(expandedTokens[i]) && /^[a-z]$/.test(expandedTokens[i + 1])) {
+      const duo = expandedTokens[i] + expandedTokens[i + 1];
       if (letterMap[duo]) {
         tok = duo;
         i += 1;
