@@ -281,12 +281,64 @@ function parseSpokenName(text) {
 
   if (!cleaned) return null;
 
-  const tokens = cleaned.split(/\s+/);
+  const rawTokens = cleaned.split(/\s+/);
+
+  // Map common letter words and homophones to their single letter equivalent
+  const letterMap = {
+    a: 'a', ay: 'a',
+    b: 'b', bee: 'b', be: 'b',
+    c: 'c', cee: 'c', see: 'c', sea: 'c',
+    d: 'd', dee: 'd',
+    e: 'e', ee: 'e',
+    f: 'f', ef: 'f', eff: 'f',
+    g: 'g', gee: 'g',
+    h: 'h', aitch: 'h',
+    i: 'i', eye: 'i',
+    j: 'j', jay: 'j',
+    k: 'k', kay: 'k',
+    l: 'l', el: 'l',
+    m: 'm', em: 'm', emm: 'm',
+    n: 'n', en: 'n',
+    o: 'o', oh: 'o',
+    p: 'p', pee: 'p',
+    q: 'q', cue: 'q', queue: 'q',
+    r: 'r', are: 'r',
+    s: 's', ess: 's',
+    t: 't', tee: 't',
+    u: 'u', you: 'u',
+    v: 'v', vee: 'v',
+    w: 'w',
+    x: 'x', ex: 'x',
+    y: 'y', why: 'y',
+    z: 'z', zee: 'z', zed: 'z'
+  };
+
+  // Normalize tokens so sequences like "k a y" and "kay" both become "kay"
+  const tokens = [];
+  for (let i = 0; i < rawTokens.length; i++) {
+    let tok = rawTokens[i];
+    if (i + 2 < rawTokens.length && /^[a-z]$/.test(rawTokens[i]) && /^[a-z]$/.test(rawTokens[i + 1]) && /^[a-z]$/.test(rawTokens[i + 2])) {
+      const tri = rawTokens[i] + rawTokens[i + 1] + rawTokens[i + 2];
+      if (letterMap[tri]) {
+        tok = tri;
+        i += 2;
+      }
+    } else if (i + 1 < rawTokens.length && /^[a-z]$/.test(rawTokens[i]) && /^[a-z]$/.test(rawTokens[i + 1])) {
+      const duo = rawTokens[i] + rawTokens[i + 1];
+      if (letterMap[duo]) {
+        tok = duo;
+        i += 1;
+      }
+    }
+    tokens.push(tok);
+  }
+
   const letters = [];
   const words = [];
   for (const tok of tokens) {
-    if (/^[a-z]$/.test(tok)) {
-      letters.push(tok);
+    const mapped = letterMap[tok] || tok;
+    if (/^[a-z]$/.test(mapped)) {
+      letters.push(mapped);
     } else {
       words.push(tok);
     }
@@ -378,6 +430,16 @@ function spellEmailForSpeech(email) {
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`AI Voice server running on port ${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`AI Voice server running on port ${PORT}`);
+  });
+}
+
+module.exports = {
+  parseSpokenName,
+  parseSpokenEmail,
+  parseDate,
+  spellEmailForSpeech,
+  app,
+};

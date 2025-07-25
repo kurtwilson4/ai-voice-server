@@ -4,7 +4,8 @@
   "description": "AI phone receptionist with Google Calendar integration",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "node test/parseSpokenName.test.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
