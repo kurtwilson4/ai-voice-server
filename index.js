@@ -211,12 +211,26 @@ app.post('/voice', async (req, res) => {
     }
   }
 
-  // Step 4: Capture Email and send confirmation
+  // Step 4: Capture Email and confirm spelling
   else if (session.step === 4) {
     const normalizedEmailSpeech = parseSpokenEmail(userSpeech);
     const emailMatch = normalizedEmailSpeech.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
     if (emailMatch) {
       session.data.email = emailMatch[0];
+      const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
+      gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, `I heard your email as ${spellEmailForSpeech(session.data.email)}. Is that correct? Please say yes or no.`);
+      session.step = 5;
+      return res.type('text/xml').send(twiml.toString());
+    } else {
+      return ask("I didn't catch that email. Could you repeat the email address?");
+    }
+  }
+
+  // Step 5: Confirm email address
+  else if (session.step === 5) {
+    const positive = /\b(yes|correct|yeah)\b/i.test(userSpeech);
+    const negative = /\b(no|incorrect|nah)\b/i.test(userSpeech);
+    if (positive) {
       try {
         await transporter.sendMail({
           from: 'lwwilsoncontainerhomes@gmail.com',
@@ -231,8 +245,15 @@ app.post('/voice', async (req, res) => {
       }
       delete sessions[callSid];
       return res.type('text/xml').send(twiml.toString());
+    } else if (negative) {
+      session.step = 4;
+      const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST', hints: 'gmail.com yahoo.com outlook.com hotmail.com icloud.com' });
+      gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, 'Okay, please say your email address again.');
+      return res.type('text/xml').send(twiml.toString());
     } else {
-      return ask("I didn't catch that email. Could you repeat the email address?");
+      const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
+      gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, `Please answer with yes or no. Is your email ${spellEmailForSpeech(session.data.email)}?`);
+      return res.type('text/xml').send(twiml.toString());
     }
   }
 
@@ -258,6 +279,20 @@ function parseSpokenEmail(text) {
     .replace(/\s+underscore\s+/g, '_')
     .replace(/\s+(?:dash|hyphen)\s+/g, '-')
     .replace(/\s+/g, '');
+}
+
+function spellEmailForSpeech(email) {
+  return email
+    .toLowerCase()
+    .split('')
+    .map(ch => {
+      if (ch === '@') return 'at';
+      if (ch === '.') return 'dot';
+      if (ch === '_') return 'underscore';
+      if (ch === '-') return 'dash';
+      return ch;
+    })
+    .join(' ');
 }
 
 const PORT = process.env.PORT || 3000;
