@@ -350,7 +350,7 @@ function parseSpokenName(text) {
     t: 't', tee: 't',
     u: 'u', you: 'u',
     v: 'v', vee: 'v',
-    w: 'w',
+    w: 'w', 'doubleu': 'w', 'double-you': 'w',
     x: 'x', ex: 'x',
     y: 'y', why: 'y',
     z: 'z', zee: 'z', zed: 'z'
@@ -360,6 +360,11 @@ function parseSpokenName(text) {
   const tokens = [];
   for (let i = 0; i < expandedTokens.length; i++) {
     let tok = expandedTokens[i];
+    if (tok === 'double' && i + 1 < expandedTokens.length && (expandedTokens[i + 1] === 'u' || expandedTokens[i + 1] === 'you')) {
+      tokens.push('doubleu');
+      i += 1;
+      continue;
+    }
     if (i + 2 < expandedTokens.length && /^[a-z]$/.test(expandedTokens[i]) && /^[a-z]$/.test(expandedTokens[i + 1]) && /^[a-z]$/.test(expandedTokens[i + 2])) {
       const tri = expandedTokens[i] + expandedTokens[i + 1] + expandedTokens[i + 2];
       if (letterMap[tri]) {
@@ -439,7 +444,13 @@ function parseSpokenEmail(text) {
     }
   };
 
-  for (const t of tokens) {
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (t === 'double' && i + 1 < tokens.length && (tokens[i + 1] === 'u' || tokens[i + 1] === 'you')) {
+      letters.push('w');
+      i += 1;
+      continue;
+    }
     const mapped = wordToLetter[t];
     if (mapped) {
       letters.push(mapped);
