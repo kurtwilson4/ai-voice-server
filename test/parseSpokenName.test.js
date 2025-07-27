@@ -13,6 +13,8 @@ const cases = [
   ['double u', 'W'],
   ['yes', null],
   ["i don't know", null],
+  ['first name j o h n last name s m i t h', 'John Smith'],
+  ['c a r r i e space l y n n', 'Carrie Lynn'],
 
 ];
 

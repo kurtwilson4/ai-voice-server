@@ -436,31 +436,60 @@ function parseSpokenName(text) {
     tokens.push(tok);
   }
 
-  const letters = [];
-  const words = [];
+  const segments = [[]];
+  let current = segments[0];
   for (const tok of tokens) {
-    const mapped = letterMap[tok] || tok;
-    if (/^[a-z]$/.test(mapped)) {
-      letters.push(mapped);
-    } else {
-      words.push(tok);
+    if (/^(?:first|last|firstname|lastname|first-name|last-name)$/.test(tok)) {
+      if (current.length) {
+        segments.push([]);
+        current = segments[segments.length - 1];
+      }
+      continue;
     }
+    if (tok === 'name' || tok === 'is') {
+      continue;
+    }
+    if (/^(?:space|dash|hyphen)$/.test(tok)) {
+      if (current.length) {
+        segments.push([]);
+        current = segments[segments.length - 1];
+      }
+      continue;
+    }
+    current.push(tok);
   }
 
-  const spelled = letters.join('');
-  const namePart = words.join(' ');
-
-  if (spelled && namePart) {
-    if (namePart.replace(/\s+/g, '') === spelled) {
-      return capitalizeWords(namePart);
+  const parts = [];
+  for (const seg of segments) {
+    if (!seg.length) continue;
+    const letters = [];
+    const words = [];
+    for (const tok of seg) {
+      const mapped = letterMap[tok] || tok;
+      if (/^[a-z]$/.test(mapped)) {
+        letters.push(mapped);
+      } else {
+        words.push(tok);
+      }
     }
-    return capitalizeWords(`${namePart} ${spelled}`);
+    const spelled = letters.join('');
+    const namePart = words.join(' ');
+    let result;
+    if (spelled && namePart) {
+      if (namePart.replace(/\s+/g, '') === spelled) {
+        result = capitalizeWords(namePart);
+      } else {
+        result = capitalizeWords(`${namePart} ${spelled}`);
+      }
+    } else if (spelled) {
+      result = capitalizeWords(spelled);
+    } else if (namePart) {
+      result = capitalizeWords(namePart);
+    }
+    if (result) parts.push(result);
   }
 
-  if (spelled) return capitalizeWords(spelled);
-  if (namePart) return capitalizeWords(namePart);
-
-  return null;
+  return parts.length ? parts.join(' ') : null;
 }
 
 function capitalizeWords(str) {
