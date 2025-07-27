@@ -329,6 +329,9 @@ function parseSpokenName(text) {
 
   if (!cleaned) return null;
 
+  const filler = /^(?:yes|yeah|yep|yup|okay|ok|sure|no|i\s+don'?t\s+know|don't\s+know|not\s+sure|unknown|n\/?a|uh|um)$/i;
+  if (filler.test(cleaned)) return null;
+
   const rawTokens = cleaned.split(/\s+/).flatMap(tok => {
     if (/^[a-z](?:-[a-z])+$/i.test(tok)) {
       return tok.split('-');

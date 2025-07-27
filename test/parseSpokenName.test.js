@@ -11,6 +11,8 @@ const cases = [
   ['the name is carrigan c-a-r-r-i-g-a-n', 'Carrigan'],
   ['double you', 'W'],
   ['double u', 'W'],
+  ['yes', null],
+  ["i don't know", null],
 
 ];
 
