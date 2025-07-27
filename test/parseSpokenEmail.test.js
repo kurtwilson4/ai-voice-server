@@ -7,6 +7,7 @@ const cases = [
   ['jane at example dot com', 'jane@example.com'],
   ['double you at test dot com', 'w@test.com'],
   ['double u at example dot com', 'w@example.com'],
+  ['kurt wayne wilson at gmail dot com', 'kurtwaynewilson@gmail.com'],
 ];
 
 for (const [input, expected] of cases) {
