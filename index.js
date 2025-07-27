@@ -498,6 +498,12 @@ function parseSpokenEmail(text) {
   }
 
   result = result.trim();
+  const atIndex = result.indexOf('@');
+  if (atIndex > 0) {
+    const before = result.slice(0, atIndex).replace(/\s+/g, '');
+    result = before + result.slice(atIndex);
+  }
+
   const match = result.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
   return match ? match[0] : result.replace(/\s+/g, '');
 }
