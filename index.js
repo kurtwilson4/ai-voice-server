@@ -30,6 +30,7 @@ const transporter = nodemailer.createTransport({
 });
 
 const sessions = {};
+const letterHints = 'a b c d e f g h i j k l m n o p q r s t u v w x y z';
 
 function endSession(callSid) {
   const session = sessions[callSid];
@@ -79,13 +80,14 @@ app.post('/voice', async (req, res) => {
   }
   const session = sessions[callSid];
 
-  const ask = (text) => {
+  const ask = (text, hints) => {
     const gather = twiml.gather({
       input: 'speech',
       action: '/voice',
       method: 'POST',
       timeout: 6,
       speechTimeout: 'auto',
+      ...(hints ? { hints } : {}),
     });
     gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, text);
     res.type('text/xml');
@@ -176,20 +178,29 @@ app.post('/voice', async (req, res) => {
     const parsedName = parseSpokenName(userSpeech);
     if (parsedName) {
       session.data.name = parsedName;
+      const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
+      gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, `I heard your name as ${spellNameForSpeech(session.data.name)}. Is that correct? Please say yes or no.`);
+      session.step = 3;
+      return res.type('text/xml').send(twiml.toString());
+    } else {
+      session.step = 4;
+      return ask("I didn't quite get the name. Can you please spell it out?", letterHints);
+    }
+  }
+
+  // Step 3: Confirm Name
+  else if (session.step === 3) {
+    const positive = /\b(yes|correct|yeah)\b/i.test(userSpeech);
+    const negative = /\b(no|incorrect|nah)\b/i.test(userSpeech);
+    if (positive) {
       try {
         const { startDate, endDate } = await finalizeBooking(session);
         twiml.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' },
           `Thank you, ${session.data.name}. Your reservation for the container home in Livingston, Texas from ${startDate} to ${endDate} for ${session.data.guests} guests is confirmed.`
         );
-        const gather = twiml.gather({
-          input: 'speech',
-          action: '/voice',
-          method: 'POST',
-          hints: 'gmail.com yahoo.com outlook.com hotmail.com icloud.com'
-        });
+        const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST', hints: 'gmail.com yahoo.com outlook.com hotmail.com icloud.com' });
         gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, 'To send you a confirmation email, please say your email address.');
-        // Move directly to email capture after successfully recording the name
-        session.step = 4;
+        session.step = 6;
         return res.type('text/xml').send(twiml.toString());
       } catch (err) {
         console.error('❌ Error creating calendar event:', err.response?.data || err.message);
@@ -197,30 +208,43 @@ app.post('/voice', async (req, res) => {
         endSession(callSid);
         return res.type('text/xml').send(twiml.toString());
       }
+    } else if (negative) {
+      session.step = 4;
+      return ask('Okay, please spell your name.', letterHints);
     } else {
-      session.step = 3;
-      return ask("I didn't quite get the name. Can you please spell it out?");
+      const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
+      gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, `Please answer with yes or no. Is your name ${spellNameForSpeech(session.data.name)}?`);
+      return res.type('text/xml').send(twiml.toString());
     }
   }
 
-  // Step 3: Handle Spelled Name
-  else if (session.step === 3 && !session.data.name) {
+  // Step 4: Handle Spelled Name
+  else if (session.step === 4) {
     const spelledName = parseSpokenName(userSpeech);
     if (spelledName) {
       session.data.name = spelledName;
+      const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
+      gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, `I understood your name as ${spellNameForSpeech(session.data.name)}. Is that correct? Please say yes or no.`);
+      session.step = 5;
+      return res.type('text/xml').send(twiml.toString());
+    } else {
+      return ask("Sorry, I still didn’t catch that. Please try spelling the name again.", letterHints);
+    }
+  }
+
+  // Step 5: Confirm Spelled Name
+  else if (session.step === 5) {
+    const positive = /\b(yes|correct|yeah)\b/i.test(userSpeech);
+    const negative = /\b(no|incorrect|nah)\b/i.test(userSpeech);
+    if (positive) {
       try {
         const { startDate, endDate } = await finalizeBooking(session);
         twiml.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' },
           `Thank you, ${session.data.name}. Your reservation for the container home in Livingston, Texas from ${startDate} to ${endDate} for ${session.data.guests} guests is confirmed.`
         );
-        const gather = twiml.gather({
-          input: 'speech',
-          action: '/voice',
-          method: 'POST',
-          hints: 'gmail.com yahoo.com outlook.com hotmail.com icloud.com'
-        });
+        const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST', hints: 'gmail.com yahoo.com outlook.com hotmail.com icloud.com' });
         gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, 'To send you a confirmation email, please say your email address.');
-        session.step = 4;
+        session.step = 6;
         return res.type('text/xml').send(twiml.toString());
       } catch (err) {
         console.error('❌ Error creating calendar event:', err.response?.data || err.message);
@@ -228,28 +252,33 @@ app.post('/voice', async (req, res) => {
         endSession(callSid);
         return res.type('text/xml').send(twiml.toString());
       }
+    } else if (negative) {
+      session.step = 4;
+      return ask('Okay, please spell your name again.', letterHints);
     } else {
-      return ask("Sorry, I still didn’t catch that. Please try spelling the name again.");
+      const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
+      gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, `Please answer with yes or no. Is your name ${spellNameForSpeech(session.data.name)}?`);
+      return res.type('text/xml').send(twiml.toString());
     }
   }
 
-  // Step 4: Capture Email and confirm spelling
-  else if (session.step === 4) {
+  // Step 6: Capture Email and confirm spelling
+  else if (session.step === 6) {
     const parsedEmail = parseSpokenEmail(userSpeech);
     const emailMatch = parsedEmail.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
     if (emailMatch) {
       session.data.email = emailMatch[0];
       const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
       gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, `I heard your email as ${spellEmailForSpeech(session.data.email)}. Is that correct? Please say yes or no.`);
-      session.step = 5;
+      session.step = 7;
       return res.type('text/xml').send(twiml.toString());
     } else {
       return ask("I didn't catch that email. Could you repeat the email address?");
     }
   }
 
-  // Step 5: Confirm email address
-  else if (session.step === 5) {
+  // Step 7: Confirm email address
+  else if (session.step === 7) {
     const positive = /\b(yes|correct|yeah)\b/i.test(userSpeech);
     const negative = /\b(no|incorrect|nah)\b/i.test(userSpeech);
     if (positive) {
@@ -272,7 +301,7 @@ app.post('/voice', async (req, res) => {
         .finally(() => endSession(callSid));
       return;
     } else if (negative) {
-      session.step = 4;
+      session.step = 6;
       const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST', hints: 'gmail.com yahoo.com outlook.com hotmail.com icloud.com' });
       gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, 'Okay, please say your email address again.');
       return res.type('text/xml').send(twiml.toString());
@@ -525,6 +554,13 @@ function spellEmailForSpeech(email) {
     .join(' ');
 }
 
+function spellNameForSpeech(name) {
+  return name
+    .replace(/\s+/g, '')
+    .split('')
+    .join(' ');
+}
+
 const PORT = process.env.PORT || 3000;
 if (require.main === module) {
   app.listen(PORT, () => {
@@ -537,6 +573,7 @@ module.exports = {
   parseSpokenEmail,
   parseDate,
   parseDateRange,
+  spellNameForSpeech,
   spellEmailForSpeech,
   app,
 };
