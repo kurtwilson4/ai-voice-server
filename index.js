@@ -31,11 +31,20 @@ const transporter = nodemailer.createTransport({
 
 const sessions = {};
 
+function endSession(callSid) {
+  const session = sessions[callSid];
+  if (session && session.cleanup) clearTimeout(session.cleanup);
+  delete sessions[callSid];
+}
+
 async function finalizeBooking(session) {
   const [startDate, endDate] = session.data.dates;
 
   const isoStart = parseDate(startDate);
   const isoEnd = parseDate(endDate || startDate);
+  if (!isoStart || !isoEnd) {
+    throw new Error('Invalid date');
+  }
   const isoEndExclusive = new Date(new Date(isoEnd).getTime() + 24 * 60 * 60 * 1000)
     .toISOString()
     .slice(0, 10);
@@ -62,12 +71,22 @@ app.post('/voice', async (req, res) => {
   const callerNumber = req.body.From;
 
   if (!sessions[callSid]) {
-    sessions[callSid] = { step: 0, data: {} };
+    sessions[callSid] = {
+      step: 0,
+      data: {},
+      cleanup: setTimeout(() => endSession(callSid), 30 * 60 * 1000),
+    };
   }
   const session = sessions[callSid];
 
   const ask = (text) => {
-    const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
+    const gather = twiml.gather({
+      input: 'speech',
+      action: '/voice',
+      method: 'POST',
+      timeout: 6,
+      speechTimeout: 'auto',
+    });
     gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, text);
     res.type('text/xml');
     res.send(twiml.toString());
@@ -84,6 +103,9 @@ app.post('/voice', async (req, res) => {
       const [startDate, endDate] = dates;
       const isoStart = parseDate(startDate);
       const isoEnd = parseDate(endDate || startDate);
+      if (!isoStart || !isoEnd) {
+        return ask("I couldn't understand those dates. Could you repeat the check-in and check-out dates?");
+      }
 
       try {
         // Check for double booking
@@ -172,7 +194,7 @@ app.post('/voice', async (req, res) => {
       } catch (err) {
         console.error('❌ Error creating calendar event:', err.response?.data || err.message);
         twiml.say('Something went wrong while trying to book your reservation. Please try again later.');
-        delete sessions[callSid];
+        endSession(callSid);
         return res.type('text/xml').send(twiml.toString());
       }
     } else {
@@ -203,7 +225,7 @@ app.post('/voice', async (req, res) => {
       } catch (err) {
         console.error('❌ Error creating calendar event:', err.response?.data || err.message);
         twiml.say('Something went wrong while trying to book your reservation. Please try again later.');
-        delete sessions[callSid];
+        endSession(callSid);
         return res.type('text/xml').send(twiml.toString());
       }
     } else {
@@ -247,7 +269,7 @@ app.post('/voice', async (req, res) => {
         .catch(err => {
           console.error('❌ Error sending confirmation email:', err.response?.data || err.message);
         })
-        .finally(() => delete sessions[callSid]);
+        .finally(() => endSession(callSid));
       return;
     } else if (negative) {
       session.step = 4;
@@ -269,8 +291,9 @@ function parseDate(str) {
   const clean = str.toLowerCase().replace(/(st|nd|rd|th)/g, '');
   const [month, day] = clean.split(' ');
   const year = new Date().getFullYear();
-  const monthIndex = new Date(`${month} 1, ${year}`).getMonth() + 1;
-  return `${year}-${('0' + monthIndex).slice(-2)}-${('0' + day).slice(-2)}`;
+  const date = new Date(`${month} ${day}, ${year}`);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString().slice(0, 10);
 }
 
 function parseDateRange(text) {
