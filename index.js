@@ -378,7 +378,10 @@ function parseDateRange(text) {
 function parseSpokenName(text) {
   let cleaned = text
     .toLowerCase()
-    .replace(/(?:my\s+name\s+is|the\s+name\s+is|name\s+is|this\s+is|it's|it\s+is)\s*/g, '')
+    .replace(
+      /(?:my\s+name\s+is|the\s+name\s+is|name\s+is|the\s+name\s+(?:for\s+(?:the\s+)?(?:reservation|booking)|on\s+(?:the\s+)?(?:reservation|booking))\s+is|the\s+(?:reservation|booking)\s+is\s+under|this\s+is|it's|it\s+is)\s*/g,
+      ''
+    )
     .replace(/[.,?!]/g, ' ')
     .replace(/\b(spelled|spell|spelling)\b/g, '')
     .trim();
