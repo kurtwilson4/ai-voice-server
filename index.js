@@ -3,6 +3,11 @@ const twilio = require('twilio');
 const { google } = require('googleapis');
 require('dotenv').config();
 
+const accountSid = process.env.TWILIO_ACCOUNT_SID;
+const authToken = process.env.TWILIO_AUTH_TOKEN;
+const smsFrom = process.env.TWILIO_PHONE_NUMBER;
+const smsClient = accountSid && authToken ? twilio(accountSid, authToken) : null;
+
 const VoiceResponse = twilio.twiml.VoiceResponse;
 const app = express();
 app.use(express.urlencoded({ extended: false }));
@@ -54,6 +59,17 @@ async function finalizeBooking(session) {
 
   return { startDate, endDate: endDate || startDate };
 }
+function sendTextConfirmation(to, name, startDate, endDate, guests) {
+  if (!smsClient || !smsFrom || !to) return;
+  smsClient.messages.create({
+    body: `Your reservation for ${name} from ${startDate} to ${endDate} for ${guests} guests is confirmed.`,
+    from: smsFrom,
+    to,
+  }).catch(err => {
+    console.error("Error sending confirmation SMS:", err.message);
+  });
+}
+
 
 app.post('/voice', async (req, res, next) => {
   try {
@@ -186,6 +202,7 @@ app.post('/voice', async (req, res, next) => {
     if (positive) {
       try {
         const { startDate, endDate } = await finalizeBooking(session);
+        sendTextConfirmation(callerNumber, session.data.name, startDate, endDate, session.data.guests);
         twiml.say({
           voice: 'Google.en-US-Wavenet-D',
           language: 'en-US',
@@ -229,6 +246,7 @@ app.post('/voice', async (req, res, next) => {
     if (positive) {
       try {
         const { startDate, endDate } = await finalizeBooking(session);
+        sendTextConfirmation(callerNumber, session.data.name, startDate, endDate, session.data.guests);
         twiml.say({
           voice: 'Google.en-US-Wavenet-D',
           language: 'en-US',
