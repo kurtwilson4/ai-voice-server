@@ -4,6 +4,13 @@ const { google } = require('googleapis');
 require('dotenv').config();
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
+const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
+const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
+const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
+const twilioClient =
+  twilioAccountSid && twilioAuthToken
+    ? twilio(twilioAccountSid, twilioAuthToken)
+    : null;
 const app = express();
 app.use(express.urlencoded({ extended: false }));
 
@@ -65,7 +72,7 @@ app.post('/voice', async (req, res, next) => {
   if (!sessions[callSid]) {
     sessions[callSid] = {
       step: 0,
-      data: {},
+      data: { phone: callerNumber },
       cleanup: setTimeout(() => endSession(callSid), 30 * 60 * 1000),
     };
   }
@@ -186,11 +193,13 @@ app.post('/voice', async (req, res, next) => {
     if (positive) {
       try {
         const { startDate, endDate } = await finalizeBooking(session);
-        twiml.say({
+        session.data.confirmation = { startDate, endDate };
+        session.step = 6;
+        const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
+        gather.say({
           voice: 'Google.en-US-Wavenet-D',
           language: 'en-US',
-        }, `Thank you, ${session.data.name}. Your reservation for the container home in Livingston, Texas from ${startDate} to ${endDate} for ${session.data.guests} guests is confirmed. Goodbye.`);
-        endSession(callSid);
+        }, `Thank you, ${session.data.name}. Your reservation for the container home in Livingston, Texas from ${startDate} to ${endDate} for ${session.data.guests} guests is confirmed. Would you like a confirmation text message sent to this phone number? Please say yes or no.`);
         return res.type('text/xml').send(twiml.toString());
       } catch (err) {
         console.error('❌ Error creating calendar event:', err.response?.data || err.message);
@@ -229,11 +238,13 @@ app.post('/voice', async (req, res, next) => {
     if (positive) {
       try {
         const { startDate, endDate } = await finalizeBooking(session);
-        twiml.say({
+        session.data.confirmation = { startDate, endDate };
+        session.step = 6;
+        const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
+        gather.say({
           voice: 'Google.en-US-Wavenet-D',
           language: 'en-US',
-        }, `Thank you, ${session.data.name}. Your reservation for the container home in Livingston, Texas from ${startDate} to ${endDate} for ${session.data.guests} guests is confirmed. Goodbye.`);
-        endSession(callSid);
+        }, `Thank you, ${session.data.name}. Your reservation for the container home in Livingston, Texas from ${startDate} to ${endDate} for ${session.data.guests} guests is confirmed. Would you like a confirmation text message sent to this phone number? Please say yes or no.`);
         return res.type('text/xml').send(twiml.toString());
       } catch (err) {
         console.error('❌ Error creating calendar event:', err.response?.data || err.message);
@@ -247,6 +258,36 @@ app.post('/voice', async (req, res, next) => {
     } else {
       const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
       gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, `Please answer with yes or no. Is your name ${spellNameForSpeech(session.data.name)}?`);
+      return res.type('text/xml').send(twiml.toString());
+    }
+  }
+
+  // Step 6: Offer confirmation text
+  else if (session.step === 6) {
+    const positive = /\b(yes|yeah|sure|please|yep)\b/i.test(userSpeech);
+    const negative = /\b(no|nah|nope)\b/i.test(userSpeech);
+    if (positive) {
+      if (twilioClient && twilioPhoneNumber) {
+        try {
+          await twilioClient.messages.create({
+            body: `Hi ${session.data.name}, your reservation for the container home in Livingston, Texas from ${session.data.confirmation.startDate} to ${session.data.confirmation.endDate} for ${session.data.guests} guests is confirmed.`,
+            from: twilioPhoneNumber,
+            to: session.data.phone,
+          });
+        } catch (err) {
+          console.error('Error sending confirmation text:', err.message);
+        }
+      }
+      twiml.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, 'A confirmation text has been sent. Goodbye.');
+      endSession(callSid);
+      return res.type('text/xml').send(twiml.toString());
+    } else if (negative) {
+      twiml.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, 'Okay, no confirmation text will be sent. Goodbye.');
+      endSession(callSid);
+      return res.type('text/xml').send(twiml.toString());
+    } else {
+      const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
+      gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, 'Please say yes or no. Would you like a confirmation text message?');
       return res.type('text/xml').send(twiml.toString());
     }
   }
