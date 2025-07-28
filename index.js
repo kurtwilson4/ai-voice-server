@@ -343,11 +343,20 @@ function normalizeOrdinals(text) {
 }
 
 function parseDate(str) {
+  if (!str) return null;
   const clean = normalizeOrdinals(str.toLowerCase()).replace(/(st|nd|rd|th)/g, '');
-  const [month, day] = clean.split(' ');
-  const year = new Date().getFullYear();
-  const date = new Date(`${month} ${day}, ${year}`);
-  if (Number.isNaN(date.getTime())) return null;
+  const [monthName, dayStr] = clean.split(/\s+/);
+  const day = parseInt(dayStr, 10);
+  if (!monthName || Number.isNaN(day)) return null;
+
+  const temp = new Date(`${monthName} 1, 2000`);
+  if (Number.isNaN(temp.getTime())) return null;
+  const month = temp.getUTCMonth();
+
+  const year = new Date().getUTCFullYear();
+  const date = new Date(Date.UTC(year, month, day));
+  if (date.getUTCDate() !== day || date.getUTCMonth() !== month) return null;
+
   return date.toISOString().slice(0, 10);
 }
 
