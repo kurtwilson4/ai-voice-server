@@ -17,6 +17,7 @@ const auth = new google.auth.GoogleAuth({
   credentials: JSON.parse(Buffer.from(googleServiceAccount, 'base64').toString('utf-8')),
   scopes: ['https://www.googleapis.com/auth/calendar'],
 });
+
 const calendar = google.calendar({ version: 'v3', auth });
 
 // Email transporter setup
@@ -65,11 +66,12 @@ async function finalizeBooking(session) {
   return { startDate, endDate: endDate || startDate };
 }
 
-app.post('/voice', async (req, res) => {
-  const twiml = new VoiceResponse();
-  const callSid = req.body.CallSid;
-  const userSpeech = req.body.SpeechResult;
-  const callerNumber = req.body.From;
+app.post('/voice', async (req, res, next) => {
+  try {
+    const twiml = new VoiceResponse();
+    const callSid = req.body.CallSid;
+    const userSpeech = req.body.SpeechResult;
+    const callerNumber = req.body.From;
 
   if (!sessions[callSid]) {
     sessions[callSid] = {
@@ -78,7 +80,7 @@ app.post('/voice', async (req, res) => {
       cleanup: setTimeout(() => endSession(callSid), 30 * 60 * 1000),
     };
   }
-  const session = sessions[callSid];
+    const session = sessions[callSid];
 
   const ask = (text, hints) => {
     const gather = twiml.gather({
@@ -312,8 +314,18 @@ app.post('/voice', async (req, res) => {
     }
   }
 
-  res.type('text/xml');
+    res.type('text/xml');
   res.send(twiml.toString());
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  const twiml = new VoiceResponse();
+  twiml.say('An unexpected error occurred. Please try again later.');
+  res.type('text/xml').send(twiml.toString());
 });
 
 function normalizeOrdinals(text) {
