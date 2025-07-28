@@ -353,7 +353,15 @@ function parseDate(str) {
   if (Number.isNaN(temp.getTime())) return null;
   const month = temp.getUTCMonth();
 
-  const year = new Date().getUTCFullYear();
+  const now = new Date();
+  let year = now.getUTCFullYear();
+  const currentMonth = now.getUTCMonth();
+  const currentDay = now.getUTCDate();
+
+  if (month < currentMonth || (month === currentMonth && day < currentDay)) {
+    year += 1; // assume booking for next year if date has already passed
+  }
+
   const date = new Date(Date.UTC(year, month, day));
   if (date.getUTCDate() !== day || date.getUTCMonth() !== month) return null;
 
