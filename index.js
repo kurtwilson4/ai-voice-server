@@ -316,8 +316,34 @@ app.post('/voice', async (req, res) => {
   res.send(twiml.toString());
 });
 
+function normalizeOrdinals(text) {
+  const map = {
+    first: '1', second: '2', third: '3', fourth: '4', fifth: '5',
+    sixth: '6', seventh: '7', eighth: '8', ninth: '9', tenth: '10',
+    eleventh: '11', twelfth: '12', thirteenth: '13', fourteenth: '14',
+    fifteenth: '15', sixteenth: '16', seventeenth: '17', eighteenth: '18',
+    nineteenth: '19', twentieth: '20',
+    'twenty first': '21', 'twenty-first': '21',
+    'twenty second': '22', 'twenty-second': '22',
+    'twenty third': '23', 'twenty-third': '23',
+    'twenty fourth': '24', 'twenty-fourth': '24',
+    'twenty fifth': '25', 'twenty-fifth': '25',
+    'twenty sixth': '26', 'twenty-sixth': '26',
+    'twenty seventh': '27', 'twenty-seventh': '27',
+    'twenty eighth': '28', 'twenty-eighth': '28',
+    'twenty ninth': '29', 'twenty-ninth': '29',
+    thirtieth: '30',
+    'thirty first': '31', 'thirty-first': '31',
+  };
+  const patterns = Object.keys(map)
+    .sort((a, b) => b.length - a.length)
+    .map(k => k.replace(/ /g, '\\s+'));
+  const regex = new RegExp(`\\b(${patterns.join('|')})\\b`, 'gi');
+  return text.replace(regex, m => map[m.toLowerCase().replace(/\\s+/g, ' ')]);
+}
+
 function parseDate(str) {
-  const clean = str.toLowerCase().replace(/(st|nd|rd|th)/g, '');
+  const clean = normalizeOrdinals(str.toLowerCase()).replace(/(st|nd|rd|th)/g, '');
   const [month, day] = clean.split(' ');
   const year = new Date().getFullYear();
   const date = new Date(`${month} ${day}, ${year}`);
@@ -328,13 +354,14 @@ function parseDate(str) {
 function parseDateRange(text) {
   const months =
     'january|february|march|april|may|june|july|august|september|october|november|december';
+  const normalized = normalizeOrdinals(text.toLowerCase());
   const re = new RegExp(
     `(?:from\\s+)?(${months})\\s+(\\d{1,2})(?:st|nd|rd|th)?` +
       `(?:\\s*(?:to|through|thru|until|till|-|\\u2013)\\s*(?:the\\s*)?(?:(${months})\\s+)?` +
       `(\\d{1,2})(?:st|nd|rd|th)?)?`,
     'i'
   );
-  const m = text.toLowerCase().match(re);
+  const m = normalized.match(re);
   if (!m) return null;
   const startMonth = m[1];
   const startDay = m[2];
