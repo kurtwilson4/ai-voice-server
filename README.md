@@ -12,6 +12,11 @@
 
    - `GOOGLE_SERVICE_ACCOUNT_BASE64` – base64 encoded Google service account JSON
    - `GOOGLE_CALENDAR_ID` – the calendar ID where bookings will be created
+   - `TWILIO_ACCOUNT_SID` – your Twilio Account SID
+   - `TWILIO_AUTH_TOKEN` – your Twilio Auth Token
+   - `TWILIO_PHONE_NUMBER` – the Twilio number to send confirmation texts from
+
+
 
 3. Start the server:
 
