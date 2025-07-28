@@ -1,9 +1,5 @@
 # ai-voice-server
 
-When a call begins you'll first be asked which property you want to book—the
-**Jalapeno** or **The Bluebonnet**. Respond with the property name so the system
-can continue with collecting your dates and other details.
-
 ## Getting Started
 
 1. Install dependencies:
