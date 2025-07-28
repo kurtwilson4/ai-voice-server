@@ -457,88 +457,6 @@ function capitalizeWords(str) {
     .join(' ');
 }
 
-function parseSpokenEmail(text) {
-  const wordToLetter = {
-    bee: 'b', cee: 'c', see: 'c', dee: 'd', eee: 'e', eff: 'f', gee: 'g',
-    aitch: 'h', jay: 'j', kay: 'k', ell: 'l', em: 'm', en: 'n', oh: 'o',
-    pee: 'p', cue: 'q', are: 'r', ess: 's', tee: 't', you: 'u', vee: 'v',
-    doubleu: 'w', 'double-you': 'w', ex: 'x', why: 'y', zee: 'z', zed: 'z'
-  };
-
-  let cleaned = text
-    .toLowerCase()
-    .replace(/(?:my\s+email(?:\s+address)?\s+is|the\s+email(?:\s+address)?\s+is|email(?:\s+address)?\s+is|it's|it\s+is|this\s+is)[:\s]*/g, '')
-    .replace(/[?!,]/g, ' ')
-    .replace(/\s+at\s+/g, ' @ ')
-    .replace(/\s+dot\s+/g, ' . ')
-    .replace(/\s+underscore\s+/g, ' _ ')
-    .replace(/\s+(?:dash|hyphen)\s+/g, ' - ')
-    .trim();
-
-  const tokens = cleaned.split(/\s+/);
-  const parts = [];
-  let letters = [];
-  const pushLetters = () => {
-    if (letters.length) {
-      parts.push(letters.join(''));
-      letters = [];
-    }
-  };
-
-  for (let i = 0; i < tokens.length; i++) {
-    const t = tokens[i];
-    if (t === 'double' && i + 1 < tokens.length && (tokens[i + 1] === 'u' || tokens[i + 1] === 'you')) {
-      letters.push('w');
-      i += 1;
-      continue;
-    }
-    const mapped = wordToLetter[t];
-    if (mapped) {
-      letters.push(mapped);
-    } else if (/^[a-z]$/.test(t)) {
-      letters.push(t);
-    } else {
-      pushLetters();
-      parts.push(t);
-    }
-  }
-  pushLetters();
-
-  let result = '';
-  const joiners = new Set(['@', '.', '_', '-']);
-  for (const part of parts) {
-    if (joiners.has(part)) {
-      result += part;
-    } else {
-      if (result && !joiners.has(result.slice(-1))) result += ' ';
-      result += part;
-    }
-  }
-
-  result = result.trim();
-  const atIndex = result.indexOf('@');
-  if (atIndex > 0) {
-    const before = result.slice(0, atIndex).replace(/\s+/g, '');
-    result = before + result.slice(atIndex);
-  }
-
-  const match = result.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
-  return match ? match[0] : result.replace(/\s+/g, '');
-}
-
-function spellEmailForSpeech(email) {
-  return email
-    .toLowerCase()
-    .split('')
-    .map(ch => {
-      if (ch === '@') return 'at';
-      if (ch === '.') return 'dot';
-      if (ch === '_') return 'underscore';
-      if (ch === '-') return 'dash';
-      return ch;
-    })
-    .join(' ');
-}
 
 function spellNameForSpeech(name) {
   return name
@@ -556,10 +474,8 @@ if (require.main === module) {
 
 module.exports = {
   parseSpokenName,
-  parseSpokenEmail,
   parseDate,
   parseDateRange,
   spellNameForSpeech,
-  spellEmailForSpeech,
   app,
 };
