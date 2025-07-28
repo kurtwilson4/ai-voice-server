@@ -7,6 +7,7 @@ const cases = [
   ['august 10 to august 12', ['august 10', 'august 12']],
   ['from august 10th until the 12th', ['august 10', 'august 12']],
   ['august 10', ['august 10']],
+  ['july 30th through august first', ['july 30', 'august 1']],
 ];
 
 for (const [input, expected] of cases) {
