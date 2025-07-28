@@ -1,7 +1,6 @@
 const express = require('express');
 const twilio = require('twilio');
 const { google } = require('googleapis');
-const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
@@ -18,16 +17,6 @@ const auth = new google.auth.GoogleAuth({
   scopes: ['https://www.googleapis.com/auth/calendar'],
 });
 const calendar = google.calendar({ version: 'v3', auth });
-
-// Email transporter setup
-const transporter = nodemailer.createTransport({
-  service: process.env.EMAIL_SERVICE || 'gmail',
-  auth: {
-    // default to the lwwilsoncontainerhomes@gmail.com account if EMAIL_USER is not set
-    user: process.env.EMAIL_USER || 'lwwilsoncontainerhomes@gmail.com',
-    pass: process.env.EMAIL_PASS,
-  },
-});
 
 const sessions = {};
 const letterHints = 'a b c d e f g h i j k l m n o p q r s t u v w x y z';
@@ -195,12 +184,11 @@ app.post('/voice', async (req, res) => {
     if (positive) {
       try {
         const { startDate, endDate } = await finalizeBooking(session);
-        twiml.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' },
-          `Thank you, ${session.data.name}. Your reservation for the container home in Livingston, Texas from ${startDate} to ${endDate} for ${session.data.guests} guests is confirmed.`
-        );
-        const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST', hints: 'gmail.com yahoo.com outlook.com hotmail.com icloud.com' });
-        gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, 'To send you a confirmation email, please say your email address.');
-        session.step = 6;
+        twiml.say({
+          voice: 'Google.en-US-Wavenet-D',
+          language: 'en-US',
+        }, `Thank you, ${session.data.name}. Your reservation for the container home in Livingston, Texas from ${startDate} to ${endDate} for ${session.data.guests} guests is confirmed. Goodbye.`);
+        endSession(callSid);
         return res.type('text/xml').send(twiml.toString());
       } catch (err) {
         console.error('❌ Error creating calendar event:', err.response?.data || err.message);
@@ -239,12 +227,11 @@ app.post('/voice', async (req, res) => {
     if (positive) {
       try {
         const { startDate, endDate } = await finalizeBooking(session);
-        twiml.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' },
-          `Thank you, ${session.data.name}. Your reservation for the container home in Livingston, Texas from ${startDate} to ${endDate} for ${session.data.guests} guests is confirmed.`
-        );
-        const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST', hints: 'gmail.com yahoo.com outlook.com hotmail.com icloud.com' });
-        gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, 'To send you a confirmation email, please say your email address.');
-        session.step = 6;
+        twiml.say({
+          voice: 'Google.en-US-Wavenet-D',
+          language: 'en-US',
+        }, `Thank you, ${session.data.name}. Your reservation for the container home in Livingston, Texas from ${startDate} to ${endDate} for ${session.data.guests} guests is confirmed. Goodbye.`);
+        endSession(callSid);
         return res.type('text/xml').send(twiml.toString());
       } catch (err) {
         console.error('❌ Error creating calendar event:', err.response?.data || err.message);
@@ -262,55 +249,7 @@ app.post('/voice', async (req, res) => {
     }
   }
 
-  // Step 6: Capture Email and confirm spelling
-  else if (session.step === 6) {
-    const parsedEmail = parseSpokenEmail(userSpeech);
-    const emailMatch = parsedEmail.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
-    if (emailMatch) {
-      session.data.email = emailMatch[0];
-      const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
-      gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, `I heard your email as ${spellEmailForSpeech(session.data.email)}. Is that correct? Please say yes or no.`);
-      session.step = 7;
-      return res.type('text/xml').send(twiml.toString());
-    } else {
-      return ask("I didn't catch that email. Could you repeat the email address?");
-    }
-  }
 
-  // Step 7: Confirm email address
-  else if (session.step === 7) {
-    const positive = /\b(yes|correct|yeah)\b/i.test(userSpeech);
-    const negative = /\b(no|incorrect|nah)\b/i.test(userSpeech);
-    if (positive) {
-      // Respond to Twilio immediately to avoid timeouts, then send the email
-      twiml.say('Thanks! A confirmation email has been sent. Goodbye.');
-      res.type('text/xml').send(twiml.toString());
-
-      console.log('Email confirmed:', session.data.email, 'Call SID:', callSid);
-
-      transporter
-        .sendMail({
-          from: 'lwwilsoncontainerhomes@gmail.com',
-          to: session.data.email,
-          subject: 'Your booking is confirmed',
-          text: `Hi ${session.data.name}, your Airbnb container home in Livingston, Texas is booked from ${session.data.dates[0]} to ${session.data.dates[1] || session.data.dates[0]} for ${session.data.guests} guest(s). If you have any questions about your reservation, please call 936-328-1615.`,
-        })
-        .catch(err => {
-          console.error('❌ Error sending confirmation email:', err.response?.data || err.message);
-        })
-        .finally(() => endSession(callSid));
-      return;
-    } else if (negative) {
-      session.step = 6;
-      const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST', hints: 'gmail.com yahoo.com outlook.com hotmail.com icloud.com' });
-      gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, 'Okay, please say your email address again.');
-      return res.type('text/xml').send(twiml.toString());
-    } else {
-      const gather = twiml.gather({ input: 'speech', action: '/voice', method: 'POST' });
-      gather.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, `Please answer with yes or no. Is your email ${spellEmailForSpeech(session.data.email)}?`);
-      return res.type('text/xml').send(twiml.toString());
-    }
-  }
 
   res.type('text/xml');
   res.send(twiml.toString());
