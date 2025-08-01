@@ -39,7 +39,7 @@ async function finalizeBooking(session) {
   const [startDate, endDate] = session.data.dates;
 
   const isoStart = parseDate(startDate);
-  const isoEnd = parseDate(endDate || startDate);
+  const isoEnd = parseDate(endDate);
   if (!isoStart || !isoEnd) {
     throw new Error('Invalid date');
   }
@@ -59,7 +59,7 @@ async function finalizeBooking(session) {
     resource: event,
   });
 
-  return { startDate, endDate: endDate || startDate };
+  return { startDate, endDate };
 }
 
 app.post('/voice', async (req, res, next) => {
@@ -99,10 +99,10 @@ app.post('/voice', async (req, res, next) => {
   // Step 0: Ask for Dates
   if (session.step === 0) {
     const dates = parseDateRange(userSpeech);
-    if (dates && dates.length >= 1) {
+    if (dates && dates.length === 2) {
       const [startDate, endDate] = dates;
       const isoStart = parseDate(startDate);
-      const isoEnd = parseDate(endDate || startDate);
+      const isoEnd = parseDate(endDate);
       if (!isoStart || !isoEnd) {
         return ask("I couldn't understand those dates. Could you repeat the check-in and check-out dates?");
       }
@@ -142,7 +142,7 @@ app.post('/voice', async (req, res, next) => {
       session.step = 1;
       return ask("Great. How many guests will be staying?");
     } else {
-      return ask("Sorry, I didn’t catch the dates. Can you say the check-in and check-out dates again?");
+      return ask("Sorry, I didn’t catch both dates. Can you say the check-in and check-out dates again?");
     }
   }
 
@@ -376,12 +376,10 @@ function parseDateRange(text) {
   const startDay = m[2];
   const endMonth = m[3] || startMonth;
   const endDay = m[4];
+  if (!endDay) return null;
   const start = `${startMonth} ${startDay}`;
-  if (endDay) {
-    const end = `${endMonth} ${endDay}`;
-    return [start, end];
-  }
-  return [start];
+  const end = `${endMonth} ${endDay}`;
+  return [start, end];
 }
 
 function parseSpokenName(text) {
