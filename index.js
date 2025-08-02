@@ -188,9 +188,8 @@ app.post('/voice', async (req, res, next) => {
 
   // Step 3: Confirm Name
   else if (session.step === 3) {
-    const positive = /\b(yes|correct|yeah)\b/i.test(userSpeech);
-    const negative = /\b(no|incorrect|nah)\b/i.test(userSpeech);
-    if (positive) {
+    const confirmation = interpretYesNo(userSpeech);
+    if (confirmation === true) {
       try {
         const { startDate, endDate } = await finalizeBooking(session);
         session.data.confirmation = { startDate, endDate };
@@ -207,7 +206,7 @@ app.post('/voice', async (req, res, next) => {
         endSession(callSid);
         return res.type('text/xml').send(twiml.toString());
       }
-    } else if (negative) {
+    } else if (confirmation === false) {
       session.step = 4;
       return ask('Okay, please spell your name.', letterHints);
     } else {
@@ -233,9 +232,8 @@ app.post('/voice', async (req, res, next) => {
 
   // Step 5: Confirm Spelled Name
   else if (session.step === 5) {
-    const positive = /\b(yes|correct|yeah)\b/i.test(userSpeech);
-    const negative = /\b(no|incorrect|nah)\b/i.test(userSpeech);
-    if (positive) {
+    const confirmation = interpretYesNo(userSpeech);
+    if (confirmation === true) {
       try {
         const { startDate, endDate } = await finalizeBooking(session);
         session.data.confirmation = { startDate, endDate };
@@ -252,7 +250,7 @@ app.post('/voice', async (req, res, next) => {
         endSession(callSid);
         return res.type('text/xml').send(twiml.toString());
       }
-    } else if (negative) {
+    } else if (confirmation === false) {
       session.step = 4;
       return ask('Okay, please spell your name again.', letterHints);
     } else {
@@ -264,9 +262,8 @@ app.post('/voice', async (req, res, next) => {
 
   // Step 6: Offer confirmation text
   else if (session.step === 6) {
-    const positive = /\b(yes|yeah|sure|please|yep)\b/i.test(userSpeech);
-    const negative = /\b(no|nah|nope)\b/i.test(userSpeech);
-    if (positive) {
+    const confirmation = interpretYesNo(userSpeech);
+    if (confirmation === true) {
       if (twilioClient && twilioPhoneNumber) {
         try {
           await twilioClient.messages.create({
@@ -281,7 +278,7 @@ app.post('/voice', async (req, res, next) => {
       twiml.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, 'A confirmation text has been sent. Goodbye.');
       endSession(callSid);
       return res.type('text/xml').send(twiml.toString());
-    } else if (negative) {
+    } else if (confirmation === false) {
       twiml.say({ voice: 'Google.en-US-Wavenet-D', language: 'en-US' }, 'Okay, no confirmation text will be sent. Goodbye.');
       endSession(callSid);
       return res.type('text/xml').send(twiml.toString());
@@ -516,6 +513,16 @@ function spellNameForSpeech(name) {
     .join(' ');
 }
 
+function interpretYesNo(text) {
+  const normalized = (text || '').toLowerCase();
+  const hasPositive = /\b(yes|yeah|yep|correct|right|sure|affirmative)\b/.test(normalized);
+  const hasNegative = /\b(no|nope|nah|not\s+(?:correct|right)|incorrect|wrong|don['’]t|do not)\b/.test(normalized);
+  if (hasNegative && !hasPositive) return false;
+  if (hasPositive && !hasNegative) return true;
+  if (hasNegative && hasPositive) return false;
+  return null;
+}
+
 const PORT = process.env.PORT || 3000;
 if (require.main === module) {
   app.listen(PORT, () => {
@@ -528,5 +535,6 @@ module.exports = {
   parseDate,
   parseDateRange,
   spellNameForSpeech,
+  interpretYesNo,
   app,
 };
